@@ -16,6 +16,8 @@ tags:
     description: Registration and login.
   - name: Me
     description: The authenticated user's own account.
+  - name: Users
+    description: User administration (admin only).
 
 paths:
   /health:
@@ -221,6 +223,90 @@ paths:
         '403': { $ref: '#/components/responses/CustomerOnly' }
         '404': { $ref: '#/components/responses/AddressNotFound' }
 
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      description: Ordered by id. Filters are optional and combine with AND.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+        - name: role
+          in: query
+          schema: { type: string, enum: [customer, admin] }
+        - name: isActive
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: One page of users
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Users]
+      summary: Get a user's details
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404': { $ref: '#/components/responses/UserNotFound' }
+
+  /users/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    patch:
+      tags: [Users]
+      summary: Block or unblock a user
+      description: >
+        A blocked user's tokens stop working immediately (`403 ACCOUNT_DISABLED`) and they can't log in.
+        An admin can't block their own account.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserStatusRequest' }
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404': { $ref: '#/components/responses/UserNotFound' }
+        '409':
+          description: '`CONFLICT`: an admin tried to block their own account'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -289,6 +375,30 @@ components:
         isActive: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    UserPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
+    PageMeta:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+        total: { type: integer, description: Number of items matching the filters, example: 57 }
+        totalPages: { type: integer, example: 3 }
+
+    UpdateUserStatusRequest:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, description: '`false` blocks the user, `true` unblocks them', example: false }
 
     CreateAddressRequest:
       type: object
@@ -386,6 +496,16 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     AddressNotFound:
       description: '`NOT_FOUND`: no address with this id belongs to the authenticated customer'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    AdminOnly:
+      description: '`FORBIDDEN`: only admins can use this endpoint; `ACCOUNT_DISABLED`: the account has been blocked'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UserNotFound:
+      description: '`NOT_FOUND`: no user with this id'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

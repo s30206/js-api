@@ -1,3 +1,7 @@
+// Shared by list() and count(): $1 is the role, $2 is isActive; null skips that filter.
+const LIST_FILTERS = `WHERE ($1::user_role IS NULL OR role = $1)
+         AND ($2::boolean IS NULL OR is_active = $2)`;
+
 export function createUserRepository({ pool }) {
   // Returns null instead of throwing when the email is already taken.
   async function create({ email, passwordHash, firstName, lastName }, db = pool) {
@@ -44,5 +48,34 @@ export function createUserRepository({ pool }) {
     await db.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [id]);
   }
 
-  return { create, findById, findByEmail, updateProfile, updatePasswordHash, lockById };
+  // Filters left undefined match every user.
+  async function list({ role, isActive }, { limit, offset }, db = pool) {
+    const { rows } = await db.query(
+      `SELECT * FROM users
+       ${LIST_FILTERS}
+       ORDER BY id
+       LIMIT $3 OFFSET $4`,
+      [role ?? null, isActive ?? null, limit, offset],
+    );
+    return rows;
+  }
+
+  async function count({ role, isActive }, db = pool) {
+    const { rows } = await db.query(`SELECT count(*)::int AS count FROM users ${LIST_FILTERS}`, [
+      role ?? null,
+      isActive ?? null,
+    ]);
+    return rows[0].count;
+  }
+
+  // Returns null when the user doesn't exist.
+  async function updateStatus(id, isActive, db = pool) {
+    const { rows } = await db.query(
+      'UPDATE users SET is_active = $2, updated_at = now() WHERE id = $1 RETURNING *',
+      [id, isActive],
+    );
+    return rows[0] ?? null;
+  }
+
+  return { create, findById, findByEmail, updateProfile, updatePasswordHash, lockById, list, count, updateStatus };
 }

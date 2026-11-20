@@ -1,6 +1,7 @@
 import { createAuthController } from './controllers/auth.controller.js';
 import { createHealthController } from './controllers/health.controller.js';
 import { createMeController } from './controllers/me.controller.js';
+import { createUsersController } from './controllers/users.controller.js';
 import { createPool } from './db/pool.js';
 import { createWithTransaction } from './db/transaction.js';
 import { createAuthenticate } from './middleware/authenticate.js';
@@ -27,6 +28,7 @@ export function createContainer() {
     authenticate: createAuthenticate({ authService }),
     authController: createAuthController({ authService }),
     meController: createMeController({ userService, authService, addressService }),
+    usersController: createUsersController({ userService }),
     healthController: createHealthController({ pool }),
   };
 }

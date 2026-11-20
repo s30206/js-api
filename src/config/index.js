@@ -13,4 +13,6 @@ export const config = Object.freeze({
   accessTokenTtlSeconds: 3600,
   bcryptCost: 12,
   maxAddressesPerUser: 3,
+  defaultPageSize: 5,
+  maxPageSize: 20,
 });
