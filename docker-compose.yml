@@ -17,6 +17,9 @@ services:
 
   api:
     build: .
+    # Seeds the admin account and sample catalog (idempotent), then starts the server.
+    # `exec` makes Node PID 1 so it receives SIGTERM directly.
+    command: ["sh", "-c", "node seeds/seed.js && exec node src/server.js"]
     restart: unless-stopped
     env_file: .env
     depends_on:

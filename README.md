@@ -808,6 +808,9 @@ services:
 
   api:
     build: .
+    # Seeds the admin account and sample catalog (idempotent), then starts the server.
+    # `exec` makes Node PID 1 so it receives SIGTERM directly.
+    command: ["sh", "-c", "node seeds/seed.js && exec node src/server.js"]
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -830,17 +833,20 @@ volumes:
 
 - `Dockerfile` is based on `node:24-alpine`. It runs `npm ci --omit=dev`, copies the source, runs as the
   non-root `node` user and exposes port `3000`.
-- The container's `CMD` is `["node", "src/server.js"]`. Node is PID 1, so it receives `SIGTERM` from
-  `docker compose stop` and shuts down gracefully (close HTTP server → `pool.end()`).
+- The image's `CMD` is `["node", "src/server.js"]`. Compose overrides it with
+  `sh -c "node seeds/seed.js && exec node src/server.js"`: the seed runs first, then `exec` replaces the shell with
+  Node. Node is PID 1, so it receives `SIGTERM` from `docker compose stop` and shuts down gracefully
+  (close HTTP server → `pool.end()`).
+- If the seed fails (e.g. a missing `ADMIN_PASSWORD`), the server is not started. The container exits and is
+  restarted by `restart: unless-stopped`, so the error repeats in `docker compose logs api` until it is fixed.
 - The database schema is created by the `db` container itself (see [Schema initialization](#schema-initialization)).
 
 ### Quick start
 
 ```bash
 cp .env.example .env          # then set JWT_SECRET and ADMIN_PASSWORD
-docker compose up --build -d
-docker compose exec api npm run seed
-docker compose logs -f api
+docker compose up --build -d  # creates the schema, seeds the admin + catalog, starts the API
+docker compose logs -f api    # starts with what the seed created or skipped
 ```
 
 - API: http://localhost:3000/api
@@ -860,8 +866,8 @@ docker compose down -v                                  # stop and wipe the data
 
 ## Seed data
 
-`seeds/seed.js` is run by hand (`docker compose exec api npm run seed`) and is **idempotent**, so it is safe to
-run again:
+`seeds/seed.js` runs automatically every time the `api` container starts, before the server. It is **idempotent** and
+runs in a single transaction, so it can also be re-run by hand with `docker compose exec api npm run seed`:
 
 - **Admin**: created from `ADMIN_EMAIL` / `ADMIN_PASSWORD` if no user with that email exists.
 - **Sample catalog**: inserted only when the `products` table is empty:
