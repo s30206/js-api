@@ -2,6 +2,7 @@
 //   - Admin: created from ADMIN_EMAIL / ADMIN_PASSWORD if no user with that email exists.
 //   - Sample catalog: inserted only when the products table is empty.
 import { createPool } from '../src/db/pool.js';
+import { createWithTransaction } from '../src/db/transaction.js';
 import { hashPassword } from '../src/utils/password.js';
 import { brands, categories, products } from './data/catalog.js';
 
@@ -58,12 +59,12 @@ async function seedCatalog(client) {
 
 const admin = adminCredentials();
 const pool = createPool();
-const client = await pool.connect();
+const withTransaction = createWithTransaction({ pool });
 try {
-  await client.query('BEGIN');
-  const adminCreated = await seedAdmin(client, admin);
-  const catalogSeeded = await seedCatalog(client);
-  await client.query('COMMIT');
+  const { adminCreated, catalogSeeded } = await withTransaction(async (client) => ({
+    adminCreated: await seedAdmin(client, admin),
+    catalogSeeded: await seedCatalog(client),
+  }));
 
   console.log(adminCreated ? `Admin ${admin.email} created` : `Admin ${admin.email} already exists, skipped`);
   console.log(
@@ -71,10 +72,6 @@ try {
       ? `Catalog seeded: ${categories.length} categories, ${brands.length} brands, ${products.length} products`
       : 'Products already exist, catalog skipped',
   );
-} catch (error) {
-  await client.query('ROLLBACK');
-  throw error;
 } finally {
-  client.release();
   await pool.end();
 }
