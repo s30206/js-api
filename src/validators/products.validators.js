@@ -1,6 +1,5 @@
-import { param, query } from 'express-validator';
-import { config } from '../config/index.js';
-import { intQuery, MAX_INT } from './users.validators.js';
+import { query } from 'express-validator';
+import { booleanQuery, idParam, MAX_INT, paginationQueries } from './common.validators.js';
 
 const SORTS = ['price', '-price', 'name', '-name', 'createdAt', '-createdAt'];
 const MAX_SPEC_KEYS = 30;
@@ -22,15 +21,6 @@ function priceQuery(field) {
     .isString().withMessage('Must be a string')
     .bail()
     .matches(/^\d{1,8}(\.\d{1,2})?$/).withMessage('Must be a non-negative amount with at most 2 decimal places');
-}
-
-function booleanQuery(field) {
-  return query(field)
-    .optional()
-    .isString().withMessage('Must be a string')
-    .bail()
-    .isIn(['true', 'false']).withMessage('Must be true or false')
-    .toBoolean(true);
 }
 
 // Specs are stored with number and boolean values, so filter values that look like those are converted to match.
@@ -57,8 +47,7 @@ function specsQuery() {
 }
 
 export const listProductsValidators = [
-  intQuery('page', 1, MAX_INT),
-  intQuery('limit', config.defaultPageSize, config.maxPageSize),
+  ...paginationQueries(),
   idQuery('categoryId'),
   idQuery('brandId'),
   priceQuery('minPrice'),
@@ -73,6 +62,4 @@ export const listProductsValidators = [
   booleanQuery('includeInactive'),
 ];
 
-export const productIdValidators = [
-  param('id').isInt({ min: 1, max: MAX_INT }).withMessage('Must be a positive integer').toInt(),
-];
+export const productIdValidators = [idParam()];

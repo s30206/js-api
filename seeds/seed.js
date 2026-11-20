@@ -8,7 +8,7 @@ import { brands, categories, products } from './data/catalog.js';
 function adminCredentials() {
   const email = (process.env.ADMIN_EMAIL || 'admin@pcshop.local').trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? '';
-  // Same limits as passwordField() in src/validators/auth.validators.js.
+  // Same limits as passwordField() in src/validators/common.validators.js.
   if (password.length < 8 || Buffer.byteLength(password) > 72) {
     throw new Error('ADMIN_PASSWORD is required: 8+ characters, at most 72 bytes');
   }

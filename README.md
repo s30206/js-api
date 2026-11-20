@@ -165,7 +165,7 @@ pc-parts-store/
 │   ├── services/                    # auth, user, address, category, brand, product, review, cart, order, payment
 │   ├── repositories/                # user, address, category, brand, product, review, cart, order, payment
 │   ├── mappers/                     # user, address, category, brand, product, review, cart, order, payment
-│   ├── validators/                  # one file per resource with express-validator chains
+│   ├── validators/                  # one file per resource with express-validator chains; shared rules in common.validators.js
 │   ├── middleware/
 │   │   ├── authenticate.js          # authenticate (required) + authenticateOptional
 │   │   ├── authorize.js             # authorize(...roles)
@@ -453,7 +453,7 @@ CREATE TABLE reviews (
 ### Catalog
 
 - **Specs** are a flat JSON object of `string | number | boolean` values (max 30 keys), validated in
-  `validators/product.validators.js`. Recommended keys per category:
+  `validators/products.validators.js`. Recommended keys per category:
 
   | Category    | Example specs                                                                                    |
   |-------------|--------------------------------------------------------------------------------------------------|

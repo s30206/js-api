@@ -1,5 +1,5 @@
-import { body, param } from 'express-validator';
-import { nameField, passwordField } from './auth.validators.js';
+import { body } from 'express-validator';
+import { idParam, nameField, passwordField, requiredStringField, textField } from './common.validators.js';
 
 export const updateProfileValidators = [
   nameField('firstName').optional(),
@@ -7,23 +7,11 @@ export const updateProfileValidators = [
 ];
 
 export const changePasswordValidators = [
-  body('currentPassword').isString().withMessage('Must be a string')
-  .bail()
-  .notEmpty().withMessage('Is required'),
+  requiredStringField('currentPassword'),
   passwordField('newPassword'),
 ];
 
 // Maximum lengths match the columns of the addresses table.
-function textField(field, max) {
-  return body(field)
-    .isString()
-    .withMessage('Must be a string')
-    .bail()
-    .trim()
-    .isLength({ min: 1, max })
-    .withMessage(`Must be 1-${max} characters`);
-}
-
 function phoneField() {
   return textField('phone', 30)
     .bail()
@@ -42,11 +30,6 @@ function countryField() {
     .withMessage('Must be an ISO 3166-1 alpha-2 country code');
 }
 
-// The upper bound keeps the value inside PostgreSQL's INTEGER range.
-function addressIdParam() {
-  return param('id').isInt({ min: 1, max: 2147483647 }).withMessage('Must be a positive integer').toInt();
-}
-
 export const createAddressValidators = [
   textField('label', 50).optional({ values: 'null' }),
   textField('recipientName', 200),
@@ -59,7 +42,7 @@ export const createAddressValidators = [
 
 // label accepts null to clear it; the other columns are NOT NULL.
 export const updateAddressValidators = [
-  addressIdParam(),
+  idParam(),
   textField('label', 50).optional({ values: 'null' }),
   textField('recipientName', 200).optional(),
   phoneField().optional(),
@@ -69,4 +52,4 @@ export const updateAddressValidators = [
   countryField().optional(),
 ];
 
-export const addressIdValidators = [addressIdParam()];
+export const addressIdValidators = [idParam()];
