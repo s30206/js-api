@@ -7,5 +7,11 @@ export function createUserService({ userRepository }) {
     return user;
   }
 
-  return { getById };
+  async function updateProfile(id, { firstName, lastName }) {
+    const user = await userRepository.updateProfile(id, { firstName, lastName });
+    if (!user) throw new NotFoundError('User not found');
+    return user;
+  }
+
+  return { getById, updateProfile };
 }

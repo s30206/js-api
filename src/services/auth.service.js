@@ -1,5 +1,5 @@
 import { config } from '../config/index.js';
-import { ConflictError, ForbiddenError, UnauthorizedError } from '../errors/AppError.js';
+import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../errors/AppError.js';
 import { signAccessToken, verifyAccessToken } from '../utils/jwt.js';
 import { comparePassword, hashPassword } from '../utils/password.js';
 
@@ -45,5 +45,14 @@ export function createAuthService({ userRepository }) {
     return user;
   }
 
-  return { register, login, authenticate };
+  async function changePassword(userId, { currentPassword, newPassword }) {
+    const user = await userRepository.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+    if (!(await comparePassword(currentPassword, user.password_hash))) {
+      throw new UnauthorizedError('INVALID_CREDENTIALS', 'Current password is incorrect');
+    }
+    await userRepository.updatePasswordHash(userId, await hashPassword(newPassword));
+  }
+
+  return { register, login, authenticate, changePassword };
 }

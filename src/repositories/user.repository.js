@@ -21,5 +21,23 @@ export function createUserRepository({ pool }) {
     return rows[0] ?? null;
   }
 
-  return { create, findById, findByEmail };
+  // Fields left undefined keep their current value. Returns null when the user doesn't exist.
+  async function updateProfile(id, { firstName, lastName }, db = pool) {
+    const { rows } = await db.query(
+      `UPDATE users
+       SET first_name = COALESCE($2, first_name),
+           last_name  = COALESCE($3, last_name),
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id, firstName ?? null, lastName ?? null],
+    );
+    return rows[0] ?? null;
+  }
+
+  async function updatePasswordHash(id, passwordHash, db = pool) {
+    await db.query('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1', [id, passwordHash]);
+  }
+
+  return { create, findById, findByEmail, updateProfile, updatePasswordHash };
 }

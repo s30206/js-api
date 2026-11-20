@@ -16,7 +16,7 @@ function emailField() {
     .withMessage('Must be at most 255 characters');
 }
 
-function nameField(field) {
+export function nameField(field) {
   return body(field)
     .isString()
     .withMessage('Must be a string')
@@ -26,9 +26,8 @@ function nameField(field) {
     .withMessage('Must be 1-100 characters');
 }
 
-export const registerValidators = [
-  emailField(),
-  body('password')
+export function passwordField(field) {
+  return body(field)
     .isString()
     .withMessage('Must be a string')
     .bail()
@@ -37,7 +36,12 @@ export const registerValidators = [
     .bail()
     // bcrypt silently ignores everything past 72 bytes, which multibyte characters can reach early.
     .isByteLength({ max: 72 })
-    .withMessage('Must be at most 72 bytes'),
+    .withMessage('Must be at most 72 bytes');
+}
+
+export const registerValidators = [
+  emailField(),
+  passwordField('password'),
   nameField('firstName'),
   nameField('lastName'),
 ];

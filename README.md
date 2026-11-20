@@ -256,8 +256,8 @@ returns `404 NOT_FOUND` so the API doesn't reveal that the resource exists.
 
 | Scenario                     | What happens                                                                                                       |
 |------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| **Logout**                   | Client-side only: the client discards its token. There is no logout endpoint, and the token stays valid until it expires. |
-| **Password change**          | `PUT /api/me/password` verifies the current password and stores the new hash. Already-issued tokens stay valid until they expire. |
+| **Logout**                   | Client-side only: the client discards its token. There is no logout endpoint. |
+| **Password change**          | `PUT /api/me/password` verifies the current password and stores the new hash. |
 | **Admin blocks a user**      | `PATCH /api/users/:id/status` sets `is_active = false`. Because `authenticate` loads the user on every request, **all** of that user's tokens stop working immediately (`403 ACCOUNT_DISABLED`), and login is refused. |
 
 ### Authorization matrix

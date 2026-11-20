@@ -20,7 +20,7 @@ export function createContainer() {
     pool,
     authenticate: createAuthenticate({ authService }),
     authController: createAuthController({ authService }),
-    meController: createMeController({ userService }),
+    meController: createMeController({ userService, authService }),
     healthController: createHealthController({ pool }),
   };
 }
