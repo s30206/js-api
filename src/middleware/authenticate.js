@@ -13,3 +13,13 @@ export function createAuthenticate({ authService }) {
     next();
   };
 }
+
+// Same checks as authenticate, but only when an Authorization header is sent; without one the request
+// continues anonymously (req.user stays undefined). A bad token is still rejected rather than ignored.
+export function createAuthenticateOptional({ authService }) {
+  const authenticate = createAuthenticate({ authService });
+  return function authenticateOptional(req, res, next) {
+    if (req.get('Authorization') === undefined) return next();
+    return authenticate(req, res, next);
+  };
+}

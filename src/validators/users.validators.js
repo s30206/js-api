@@ -2,11 +2,11 @@ import { body, param, query } from 'express-validator';
 import { config } from '../config/index.js';
 
 // Upper bounds keep values inside PostgreSQL's INTEGER range.
-const MAX_INT = 2147483647;
+export const MAX_INT = 2147483647;
 
 // isString() rejects repeated parameters (?page=1&page=2), which arrive as arrays.
 // Express 5 re-parses req.query on every access, so read the sanitized values with matchedData().
-function intQuery(field, defaultValue, max) {
+export function intQuery(field, defaultValue, max) {
   return query(field)
     .default(String(defaultValue))
     .isString()

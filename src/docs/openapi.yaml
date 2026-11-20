@@ -18,6 +18,8 @@ tags:
     description: The authenticated user's own account.
   - name: Users
     description: User administration (admin only).
+  - name: Products
+    description: Product catalog. Public; an admin token also unlocks inactive (delisted) products.
 
 paths:
   /health:
@@ -307,6 +309,92 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /products:
+    get:
+      tags: [Products]
+      summary: List products
+      description: >
+        Filters are optional and combine with AND. Authentication is optional; send an admin token
+        together with `includeInactive=true` to also list inactive products.
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+        - name: categoryId
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: brandId
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: minPrice
+          in: query
+          description: Inclusive, at most 2 decimal places.
+          schema: { type: string, pattern: '^\d{1,8}(\.\d{1,2})?$', example: '500' }
+        - name: maxPrice
+          in: query
+          description: Inclusive, at most 2 decimal places.
+          schema: { type: string, pattern: '^\d{1,8}(\.\d{1,2})?$', example: '1500.50' }
+        - name: inStock
+          in: query
+          description: '`true`: only products with stock > 0; `false`: only products that are out of stock.'
+          schema: { type: boolean }
+        - name: specs
+          in: query
+          description: >
+            Exact spec matches, written as `specs[<key>]=<value>`, e.g. `specs[socket]=AM5&specs[cores]=8`.
+            Numeric-looking values are matched as numbers and `true`/`false` as booleans. At most 30 keys.
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties: { type: string }
+            example: { socket: AM5 }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [price, -price, name, -name, createdAt, -createdAt]
+            default: -createdAt
+        - name: includeInactive
+          in: query
+          description: Also list inactive products. Admin only; ignored for everyone else.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: One page of products
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AccountDisabled' }
+
+  /products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Products]
+      summary: Get a product's details
+      description: Authentication is optional; inactive products are only returned to admins.
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: The product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AccountDisabled' }
+        '404': { $ref: '#/components/responses/ProductNotFound' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -454,6 +542,55 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    Product:
+      type: object
+      required:
+        [id, sku, name, description, price, currency, stock, isActive, category, brand, specs, rating, createdAt, updatedAt]
+      properties:
+        id: { type: integer, example: 12 }
+        sku: { type: string, example: CPU-AMD-R7-9800X3D }
+        name: { type: string, example: AMD Ryzen 7 9800X3D }
+        description: { type: string, nullable: true, example: 8-core desktop processor with 3D V-Cache }
+        price: { type: string, description: Decimal string, so no precision is lost, example: '2199.00' }
+        currency: { type: string, enum: [PLN] }
+        stock: { type: integer, example: 14 }
+        isActive: { type: boolean, description: '`false` means the product is delisted' }
+        category:
+          type: object
+          required: [id, name, slug]
+          properties:
+            id: { type: integer, example: 1 }
+            name: { type: string, example: CPU }
+            slug: { type: string, example: cpu }
+        brand:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: integer, example: 1 }
+            name: { type: string, example: AMD }
+        specs:
+          type: object
+          additionalProperties:
+            oneOf: [{ type: string }, { type: number }, { type: boolean }]
+          example: { socket: AM5, cores: 8, threads: 16, baseClockGhz: 4.7, boostClockGhz: 5.2, tdpW: 120 }
+        rating:
+          type: object
+          required: [average, count]
+          properties:
+            average: { type: number, nullable: true, description: Rounded to 2 decimals; null without reviews, example: 4.67 }
+            count: { type: integer, example: 3 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ProductPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
     Error:
       type: object
       required: [error]
@@ -506,6 +643,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     UserNotFound:
       description: '`NOT_FOUND`: no user with this id'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProductNotFound:
+      description: '`NOT_FOUND`: no product with this id, or it is inactive and the caller is not an admin'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

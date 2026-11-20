@@ -10,7 +10,8 @@ const openApiSpec = YAML.parse(readFileSync(new URL('./docs/openapi.yaml', impor
 
 export function createApp(container) {
   const app = express();
-
+  
+  app.set('query parser', 'extended');
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
   app.use(express.json());
   app.use('/api', createApiRouter(container));
