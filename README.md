@@ -552,7 +552,7 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 
 - Base path: **`/api`**. JSON in, JSON out. Field names are `camelCase`.
 - Auth header: `Authorization: Bearer <accessToken>`.
-- **Pagination** (all list endpoints): `?page=1&limit=20` (`limit` max `100`). Response shape:
+- **Pagination** (all list endpoints except `GET /api/me/addresses`): `?page=1&limit=20` (`limit` max `100`). Response shape:
 
   ```json
   {
@@ -584,7 +584,7 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 | 402  | `PAYMENT_DECLINED`                                                                                                           |
 | 403  | `FORBIDDEN`, `ACCOUNT_DISABLED`, `REVIEW_NOT_ALLOWED`                                                                        |
 | 404  | `NOT_FOUND`                                                                                                                  |
-| 409  | `CONFLICT`, `EMAIL_TAKEN`, `CART_EMPTY`, `INSUFFICIENT_STOCK`, `PRODUCT_UNAVAILABLE`, `INVALID_ORDER_STATE`, `ALREADY_REVIEWED`, `CATEGORY_IN_USE`, `BRAND_IN_USE` |
+| 409  | `CONFLICT`, `EMAIL_TAKEN`, `ADDRESS_LIMIT_REACHED`, `CART_EMPTY`, `INSUFFICIENT_STOCK`, `PRODUCT_UNAVAILABLE`, `INVALID_ORDER_STATE`, `ALREADY_REVIEWED`, `CATEGORY_IN_USE`, `BRAND_IN_USE` |
 | 500  | `INTERNAL_ERROR`                                                                                                             |
 
 ### Endpoints
@@ -610,9 +610,9 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 | GET    | `/api/me`                  | Authenticated | Own profile                                                        |
 | PATCH  | `/api/me`                  | Authenticated | Update `firstName`, `lastName`                                     |
 | PUT    | `/api/me/password`         | Authenticated | `{ currentPassword, newPassword }`, `204`                          |
-| GET    | `/api/me/addresses`        | Customer      | List own addresses                                                 |
-| POST   | `/api/me/addresses`        | Customer      | `{ label?, recipientName, phone, street, city, postalCode, country? }` |
-| PATCH  | `/api/me/addresses/:id`    | Customer      | Update own address                                                 |
+| GET    | `/api/me/addresses`        | Customer      | List own addresses (plain array, not paginated: at most 3)         |
+| POST   | `/api/me/addresses`        | Customer      | `{ label?, recipientName, phone, street, city, postalCode, country? }`, `201`; a 4th address returns `409 ADDRESS_LIMIT_REACHED` |
+| PATCH  | `/api/me/addresses/:id`    | Customer      | Update own address; only fields present change, `label: null` clears it |
 | DELETE | `/api/me/addresses/:id`    | Customer      | Delete own address (orders keep their snapshot)                    |
 
 #### Users (admin)
@@ -772,7 +772,7 @@ clear message if something required is missing.
 | `ADMIN_PASSWORD`            | *(required)*                                    | Seeded admin password                                 |
 
 Fixed constants (in `config/index.js`, not env): token lifetime `3600 s`, bcrypt cost `12`, currency `PLN`,
-pagination default/max `20`/`100`.
+pagination default/max `20`/`100`, at most `3` addresses per customer.
 
 ---
 

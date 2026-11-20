@@ -39,5 +39,10 @@ export function createUserRepository({ pool }) {
     await db.query('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1', [id, passwordHash]);
   }
 
-  return { create, findById, findByEmail, updateProfile, updatePasswordHash };
+  // Row lock held until the surrounding transaction ends; serializes per-user writes.
+  async function lockById(id, db = pool) {
+    await db.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [id]);
+  }
+
+  return { create, findById, findByEmail, updateProfile, updatePasswordHash, lockById };
 }

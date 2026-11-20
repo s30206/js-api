@@ -12,4 +12,5 @@ export const config = Object.freeze({
   jwtSecret,
   accessTokenTtlSeconds: 3600,
   bcryptCost: 12,
+  maxAddressesPerUser: 3,
 });

@@ -141,6 +141,86 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '403': { $ref: '#/components/responses/AccountDisabled' }
 
+  /me/addresses:
+    get:
+      tags: [Me]
+      summary: List the authenticated customer's addresses
+      description: Oldest first. Not paginated, since a customer has at most 3 addresses.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Own addresses
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Address' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+    post:
+      tags: [Me]
+      summary: Add an address to the authenticated customer's address book
+      description: A customer can have at most 3 addresses.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAddressRequest' }
+      responses:
+        '201':
+          description: Address created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Address' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '409':
+          description: '`ADDRESS_LIMIT_REACHED`: the customer already has 3 addresses'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /me/addresses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    patch:
+      tags: [Me]
+      summary: Update one of the authenticated customer's addresses
+      description: 'Only the fields present in the body are changed. Send `"label": null` to remove the label.'
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAddressRequest' }
+      responses:
+        '200':
+          description: Updated address
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Address' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '404': { $ref: '#/components/responses/AddressNotFound' }
+    delete:
+      tags: [Me]
+      summary: Delete one of the authenticated customer's addresses
+      description: Orders placed with this address keep their own copy of it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Address deleted
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '404': { $ref: '#/components/responses/AddressNotFound' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -210,6 +290,60 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    CreateAddressRequest:
+      type: object
+      required: [recipientName, phone, street, city, postalCode]
+      properties:
+        label: { type: string, nullable: true, minLength: 1, maxLength: 50, example: Home }
+        recipientName: { type: string, minLength: 1, maxLength: 200, example: Jan Kowalski }
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 30
+          pattern: '^\+?[0-9 ()-]+$'
+          example: +48 600 123 456
+        street: { type: string, minLength: 1, maxLength: 255, example: ul. Marszałkowska 1/2 }
+        city: { type: string, minLength: 1, maxLength: 100, example: Warszawa }
+        postalCode: { type: string, minLength: 1, maxLength: 20, example: 00-001 }
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          default: PL
+          description: ISO 3166-1 alpha-2 code, case-insensitive (stored upper-cased).
+          example: PL
+
+    UpdateAddressRequest:
+      type: object
+      properties:
+        label: { type: string, nullable: true, minLength: 1, maxLength: 50, example: Office }
+        recipientName: { type: string, minLength: 1, maxLength: 200, example: Jan Kowalski }
+        phone: { type: string, minLength: 1, maxLength: 30, pattern: '^\+?[0-9 ()-]+$', example: +48 600 123 456 }
+        street: { type: string, minLength: 1, maxLength: 255, example: ul. Prosta 20 }
+        city: { type: string, minLength: 1, maxLength: 100, example: Kraków }
+        postalCode: { type: string, minLength: 1, maxLength: 20, example: 30-001 }
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2 code, case-insensitive (stored upper-cased).
+          example: PL
+
+    Address:
+      type: object
+      required: [id, label, recipientName, phone, street, city, postalCode, country, createdAt, updatedAt]
+      properties:
+        id: { type: integer, example: 7 }
+        label: { type: string, nullable: true, example: Home }
+        recipientName: { type: string, example: Jan Kowalski }
+        phone: { type: string, example: +48 600 123 456 }
+        street: { type: string, example: ul. Marszałkowska 1/2 }
+        city: { type: string, example: Warszawa }
+        postalCode: { type: string, example: 00-001 }
+        country: { type: string, example: PL }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
     Error:
       type: object
       required: [error]
@@ -242,6 +376,16 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     AccountDisabled:
       description: '`ACCOUNT_DISABLED`: the account has been blocked'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    CustomerOnly:
+      description: '`FORBIDDEN`: only customers can use this endpoint; `ACCOUNT_DISABLED`: the account has been blocked'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    AddressNotFound:
+      description: '`NOT_FOUND`: no address with this id belongs to the authenticated customer'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
