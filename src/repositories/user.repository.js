@@ -1,80 +1,59 @@
-// Shared by list() and count(): $1 is the role, $2 is isActive; null skips that filter.
-const LIST_FILTERS = `WHERE ($1::user_role IS NULL OR role = $1)
-         AND ($2::boolean IS NULL OR is_active = $2)`;
+// Shared by list() and count(). Prisma ignores undefined values, so filters left undefined match every user.
+function listWhere({ role, isActive }) {
+  return { role, is_active: isActive };
+}
 
-export function createUserRepository({ pool }) {
+export function createUserRepository({ prisma }) {
   // Returns null instead of throwing when the email is already taken.
-  async function create({ email, passwordHash, firstName, lastName }, db = pool) {
-    const { rows } = await db.query(
-      `INSERT INTO users (email, password_hash, first_name, last_name)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (email) DO NOTHING
-       RETURNING *`,
-      [email, passwordHash, firstName, lastName],
-    );
-    return rows[0] ?? null;
+  // skipDuplicates makes this INSERT ... ON CONFLICT DO NOTHING RETURNING, so a duplicate returns no row.
+  async function create({ email, passwordHash, firstName, lastName }, db = prisma) {
+    const [user] = await db.users.createManyAndReturn({
+      data: [{ email, password_hash: passwordHash, first_name: firstName, last_name: lastName }],
+      skipDuplicates: true,
+    });
+    return user ?? null;
   }
 
-  async function findById(id, db = pool) {
-    const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [id]);
-    return rows[0] ?? null;
+  async function findById(id, db = prisma) {
+    return db.users.findUnique({ where: { id } });
   }
 
-  async function findByEmail(email, db = pool) {
-    const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email]);
-    return rows[0] ?? null;
+  async function findByEmail(email, db = prisma) {
+    return db.users.findUnique({ where: { email } });
   }
 
   // Fields left undefined keep their current value. Returns null when the user doesn't exist.
-  async function updateProfile(id, { firstName, lastName }, db = pool) {
-    const { rows } = await db.query(
-      `UPDATE users
-       SET first_name = COALESCE($2, first_name),
-           last_name  = COALESCE($3, last_name),
-           updated_at = now()
-       WHERE id = $1
-       RETURNING *`,
-      [id, firstName ?? null, lastName ?? null],
-    );
-    return rows[0] ?? null;
+  // updateManyAndReturn returns no row for a missing id, where update() would throw.
+  async function updateProfile(id, { firstName, lastName }, db = prisma) {
+    const [user] = await db.users.updateManyAndReturn({
+      where: { id },
+      data: { first_name: firstName, last_name: lastName },
+    });
+    return user ?? null;
   }
 
-  async function updatePasswordHash(id, passwordHash, db = pool) {
-    await db.query('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1', [id, passwordHash]);
+  async function updatePasswordHash(id, passwordHash, db = prisma) {
+    await db.users.updateMany({ where: { id }, data: { password_hash: passwordHash } });
   }
 
   // Row lock held until the surrounding transaction ends; serializes per-user writes.
-  async function lockById(id, db = pool) {
-    await db.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [id]);
+  // Still raw SQL on the pg client from withTransaction, because address.repository.js shares that transaction.
+  async function lockById(id, client) {
+    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [id]);
   }
 
-  // Filters left undefined match every user.
-  async function list({ role, isActive }, { limit, offset }, db = pool) {
-    const { rows } = await db.query(
-      `SELECT * FROM users
-       ${LIST_FILTERS}
-       ORDER BY id
-       LIMIT $3 OFFSET $4`,
-      [role ?? null, isActive ?? null, limit, offset],
-    );
-    return rows;
+  async function list(filters, { limit, offset }, db = prisma) {
+    return db.users.findMany({ where: listWhere(filters), orderBy: { id: 'asc' }, skip: offset, take: limit });
   }
 
-  async function count({ role, isActive }, db = pool) {
-    const { rows } = await db.query(`SELECT count(*)::int AS count FROM users ${LIST_FILTERS}`, [
-      role ?? null,
-      isActive ?? null,
-    ]);
-    return rows[0].count;
+  async function count(filters, db = prisma) {
+    return db.users.count({ where: listWhere(filters) });
   }
 
   // Returns null when the user doesn't exist.
-  async function updateStatus(id, isActive, db = pool) {
-    const { rows } = await db.query(
-      'UPDATE users SET is_active = $2, updated_at = now() WHERE id = $1 RETURNING *',
-      [id, isActive],
-    );
-    return rows[0] ?? null;
+  async function updateStatus(id, isActive, db = prisma) {
+    const [user] = await db.users.updateManyAndReturn({ where: { id }, data: { is_active: isActive } });
+    return user ?? null;
   }
 
   return { create, findById, findByEmail, updateProfile, updatePasswordHash, lockById, list, count, updateStatus };

@@ -21,7 +21,7 @@ export function createContainer() {
   const prisma = createPrismaClient({ pool });
   const withTransaction = createWithTransaction({ pool });
 
-  const userRepository = createUserRepository({ pool });
+  const userRepository = createUserRepository({ prisma });
   const addressRepository = createAddressRepository({ pool });
   const productRepository = createProductRepository({ prisma });
 
