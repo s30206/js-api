@@ -38,6 +38,6 @@ export function createContainer() {
     meController: createMeController({ userService, authService, addressService }),
     usersController: createUsersController({ userService }),
     productsController: createProductsController({ productService }),
-    healthController: createHealthController({ pool }),
+    healthController: createHealthController({ prisma }),
   };
 }
