@@ -1,23 +1,23 @@
 import { config } from '../config/index.js';
 import { ConflictError, NotFoundError } from '../errors/AppError.js';
 
-export function createAddressService({ addressRepository, userRepository, withTransaction }) {
+export function createAddressService({ addressRepository, userRepository, prisma }) {
   async function list(userId) {
     return addressRepository.listByUser(userId);
   }
 
   async function create(userId, fields) {
-    return withTransaction(async (client) => {
+    return prisma.$transaction(async (tx) => {
       // Locking the user row serializes concurrent creates for the same user,
       // so two requests can't both pass the limit check.
-      await userRepository.lockById(userId, client);
-      if ((await addressRepository.countByUser(userId, client)) >= config.maxAddressesPerUser) {
+      await userRepository.lockById(userId, tx);
+      if ((await addressRepository.countByUser(userId, tx)) >= config.maxAddressesPerUser) {
         throw new ConflictError(
           'ADDRESS_LIMIT_REACHED',
           `You can have at most ${config.maxAddressesPerUser} addresses`,
         );
       }
-      return addressRepository.create(userId, fields, client);
+      return addressRepository.create(userId, fields, tx);
     });
   }
 

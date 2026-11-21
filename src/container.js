@@ -5,7 +5,6 @@ import { createProductsController } from './controllers/products.controller.js';
 import { createUsersController } from './controllers/users.controller.js';
 import { createPool } from './db/pool.js';
 import { createPrismaClient } from './db/prisma.js';
-import { createWithTransaction } from './db/transaction.js';
 import { createAuthenticate, createAuthenticateOptional } from './middleware/authenticate.js';
 import { createAddressRepository } from './repositories/address.repository.js';
 import { createProductRepository } from './repositories/product.repository.js';
@@ -19,15 +18,14 @@ import { createUserService } from './services/user.service.js';
 export function createContainer() {
   const pool = createPool();
   const prisma = createPrismaClient({ pool });
-  const withTransaction = createWithTransaction({ pool });
 
   const userRepository = createUserRepository({ prisma });
-  const addressRepository = createAddressRepository({ pool });
+  const addressRepository = createAddressRepository({ prisma });
   const productRepository = createProductRepository({ prisma });
 
   const authService = createAuthService({ userRepository });
   const userService = createUserService({ userRepository });
-  const addressService = createAddressService({ addressRepository, userRepository, withTransaction });
+  const addressService = createAddressService({ addressRepository, userRepository, prisma });
   const productService = createProductService({ productRepository });
 
   return {

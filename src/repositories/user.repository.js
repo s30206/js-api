@@ -37,9 +37,9 @@ export function createUserRepository({ prisma }) {
   }
 
   // Row lock held until the surrounding transaction ends; serializes per-user writes.
-  // Still raw SQL on the pg client from withTransaction, because address.repository.js shares that transaction.
-  async function lockById(id, client) {
-    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [id]);
+  // Raw SQL because Prisma has no FOR UPDATE; tx must be the client from prisma.$transaction().
+  async function lockById(id, tx) {
+    await tx.$queryRaw`SELECT id FROM users WHERE id = ${id} FOR UPDATE`;
   }
 
   async function list(filters, { limit, offset }, db = prisma) {
