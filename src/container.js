@@ -4,6 +4,7 @@ import { createMeController } from './controllers/me.controller.js';
 import { createProductsController } from './controllers/products.controller.js';
 import { createUsersController } from './controllers/users.controller.js';
 import { createPool } from './db/pool.js';
+import { createPrismaClient } from './db/prisma.js';
 import { createWithTransaction } from './db/transaction.js';
 import { createAuthenticate, createAuthenticateOptional } from './middleware/authenticate.js';
 import { createAddressRepository } from './repositories/address.repository.js';
@@ -17,6 +18,7 @@ import { createUserService } from './services/user.service.js';
 // Composition root: pool - repositories - services - controllers.
 export function createContainer() {
   const pool = createPool();
+  const prisma = createPrismaClient({ pool });
   const withTransaction = createWithTransaction({ pool });
 
   const userRepository = createUserRepository({ pool });
