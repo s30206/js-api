@@ -1,7 +1,6 @@
 // Idempotent: runs every time the api container starts (see docker-compose.yml) and is safe to re-run by hand.
 //   - Admin: created from ADMIN_EMAIL / ADMIN_PASSWORD if no user with that email exists.
 //   - Sample catalog: inserted only when the products table is empty.
-import { createPool } from '../src/db/pool.js';
 import { createPrismaClient } from '../src/db/prisma.js';
 import { hashPassword } from '../src/utils/password.js';
 import { brands, categories, products } from './data/catalog.js';
@@ -62,8 +61,7 @@ async function seedCatalog(tx) {
 }
 
 const admin = adminCredentials();
-const pool = createPool();
-const prisma = createPrismaClient({ pool });
+const prisma = createPrismaClient();
 try {
   const { adminCreated, catalogSeeded } = await prisma.$transaction(async (tx) => ({
     adminCreated: await seedAdmin(tx, admin),
@@ -82,5 +80,5 @@ catch (err) {
   process.exitCode = 1;
 } 
 finally {
-  await pool.end();
+  await prisma.$disconnect();
 }
