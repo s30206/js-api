@@ -23,7 +23,7 @@ export function createContainer() {
 
   const userRepository = createUserRepository({ pool });
   const addressRepository = createAddressRepository({ pool });
-  const productRepository = createProductRepository({ pool });
+  const productRepository = createProductRepository({ prisma });
 
   const authService = createAuthService({ userRepository });
   const userService = createUserService({ userRepository });
