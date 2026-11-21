@@ -2,7 +2,7 @@
 
 A REST API for a small online shop selling PC components (CPUs, GPUs, RAM, motherboards, PSUs, storage, cases).
 It is a pet project built with **Node.js + Express 5** on top of **PostgreSQL**, using a **layered architecture**
-with a hand-written **repository layer** (no ORM, no query builder) and **JWT authentication**.
+with a **repository layer on Prisma ORM** and **JWT authentication**.
 The whole system runs in **Docker**.
 
 ---
@@ -50,8 +50,8 @@ The whole system runs in **Docker**.
 | Runtime            | Node.js 24 LTS, JavaScript, **ES modules** (`"type": "module"`)        |
 | HTTP framework     | Express 5 (native async error propagation, no async wrapper needed)    |
 | Database           | PostgreSQL 18                                                          |
-| DB driver          | `pg` (node-postgres) `Pool`, raw parameterized SQL                     |
-| Schema             | One SQL init script (`db/init.sql`) run by the Postgres container      |
+| ORM                | Prisma 7: `@prisma/client` with the `@prisma/adapter-pg` driver adapter |
+| Schema             | One SQL init script (`db/init.sql`) run by the Postgres container; `prisma/schema.prisma` introspected from it |
 | Validation         | `express-validator`                                                    |
 | Auth               | `jsonwebtoken` (HS256), `bcryptjs` for password hashing                |
 | API docs           | `swagger-ui-express` serving a hand-written `openapi.yaml` (parsed with `yaml`) |
@@ -73,22 +73,24 @@ flowchart LR
         Controllers --> Services
         Controllers --> Mappers
         Services --> Repositories
+        Services -. "transactions" .-> Prisma
+        Repositories --> Prisma["Prisma Client<br/>(@prisma/adapter-pg)"]
     end
-    Repositories --> DB[(PostgreSQL)]
+    Prisma --> DB[(PostgreSQL)]
 ```
 
 | Layer            | Responsibility                                                                                         | Must NOT                                       |
 |------------------|--------------------------------------------------------------------------------------------------------|------------------------------------------------|
 | **Routes**       | Map URL + method to a chain: `authenticate` → `authorize(role)` → validators → `validate` → controller | Contain logic                                  |
 | **Validators**   | `express-validator` chains per endpoint (body, params, query), normalization (trim, lowercase email)   | Touch the database                             |
-| **Controllers**  | HTTP only: read `req`, call one service method, map result through a mapper, set status code, send JSON | Contain SQL or business rules                  |
-| **Services**     | Business rules, ownership checks, state transitions, **transaction boundaries**                        | Know about `req`/`res` or write SQL            |
-| **Repositories** | Raw parameterized SQL. Return plain DB rows (`snake_case`)                                             | Contain business rules                         |
-| **Mappers**      | Turn DB rows into response DTOs: `snake_case → camelCase`, hide internals (`password_hash`), format money | Perform I/O                                    |
+| **Controllers**  | HTTP only: read `req`, call one service method, map result through a mapper, set status code, send JSON | Query the database or contain business rules   |
+| **Services**     | Business rules, ownership checks, state transitions, **transaction boundaries** (`prisma.$transaction`) | Know about `req`/`res` or build queries        |
+| **Repositories** | Prisma Client queries (raw SQL only for row locks). Return records with the DB's `snake_case` field names | Contain business rules                         |
+| **Mappers**      | Turn repository records into response DTOs: `snake_case → camelCase`, hide internals (`password_hash`), format money | Perform I/O                                    |
 
 ### Dependency injection
 
-There is no DI framework. `src/container.js` is the **composition root**: it creates the `pg` pool, builds every
+There is no DI framework. `src/container.js` is the **composition root**: it creates the Prisma client, builds every
 repository, injects repositories into service factories, and injects services into controller factories.
 Every module is a factory function receiving its dependencies, e.g.:
 
@@ -96,7 +98,7 @@ Every module is a factory function receiving its dependencies, e.g.:
 // src/services/order.service.js
 export function createOrderService({ orderRepository, productRepository, cartRepository,
                                      addressRepository, paymentRepository, paymentService,
-                                     withTransaction }) {
+                                     prisma }) {
   return { checkout, pay, cancel, updateStatus, getById, list };
   // ...
 }
@@ -106,33 +108,38 @@ This keeps services trivially unit-testable: tests pass mocked repositories inst
 
 ### Transactions
 
-Services own transactions through a small helper in `src/db/transaction.js`:
+Services own transactions through Prisma's interactive transactions:
 
 ```js
-await withTransaction(async (client) => {
-  const products = await productRepository.lockByIds(ids, client); // SELECT ... FOR UPDATE
-  await productRepository.decrementStock(items, client);
+await prisma.$transaction(async (tx) => {
+  const products = await productRepository.lockByIds(ids, tx); // SELECT ... FOR UPDATE via tx.$queryRaw
+  await productRepository.decrementStock(items, tx);
   // ...
 });
 ```
 
-`withTransaction` checks out a client from the pool, runs `BEGIN`, calls the callback, then `COMMIT` (or `ROLLBACK`
-on any thrown error) and always releases the client. **Every repository method accepts an optional last argument
-`db`** (defaults to the pool) so the same method works inside or outside a transaction.
+`prisma.$transaction` runs `BEGIN`, calls the callback with a transaction client `tx`, then commits, or rolls back
+if the callback throws. **Every repository method accepts an optional last argument `db`** (defaults to the Prisma
+client), so the same method works inside or outside a transaction: pass `tx` to run it inside one.
 
-### SQL safety
+Prisma has no `SELECT ... FOR UPDATE`, so row locks are raw SQL through `tx.$queryRaw`. A lock only makes sense
+inside a transaction, so lock methods (e.g. `userRepository.lockById(id, tx)`) take `tx` as a required argument.
 
-- All values are passed as `$1, $2, …` parameters, never concatenated.
-- Dynamic parts of queries (filters, `ORDER BY`) are built only from **whitelisted** column maps. For example,
-  `sort=-price` maps to `p.price DESC` through a fixed lookup table. Unknown values are rejected by validators.
+### Query safety
+
+- Prisma Client sends every value as a bound parameter. The few raw queries use the `$queryRaw` tagged template,
+  which also turns `${…}` interpolations into parameters; `$queryRawUnsafe` is never used.
+- Dynamic parts of queries (filters, `orderBy`) are built only from **whitelisted** maps. For example,
+  `sort=-price` maps to `[{ price: 'desc' }, { id: 'asc' }]` through a fixed lookup table. Unknown values are
+  rejected by validators.
 
 ### Error handling
 
 - `src/errors/AppError.js` defines `AppError(statusCode, code, message, details)` and subclasses:
   `ValidationError`, `UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `ConflictError`, `PaymentDeclinedError`.
 - Services throw these; Express 5 forwards rejected promises from async handlers to `errorHandler.js` automatically.
-- `errorHandler.js` also translates Postgres errors that slip through (`23505` unique violation → `409 CONFLICT`,
-  `23503` FK violation → `409 CONFLICT`) and converts anything unknown into `500 INTERNAL_ERROR` without leaking
+- `errorHandler.js` also translates Prisma errors that slip through (`P2002` unique constraint → `409 CONFLICT`,
+  `P2003` foreign key constraint → `409 CONFLICT`) and converts anything unknown into `500 INTERNAL_ERROR` without leaking
   stack traces (the stack is logged instead).
 
 ---
@@ -144,12 +151,13 @@ pc-parts-store/
 ├── src/
 │   ├── server.js                    # entry point: starts HTTP server, graceful shutdown
 │   ├── app.js                       # createApp(container): Express app, global middleware, routes, error handling
-│   ├── container.js                 # composition root: pool → repositories → services → controllers
+│   ├── container.js                 # composition root: Prisma client → repositories → services → controllers
 │   ├── config/
 │   │   └── index.js                 # reads + validates env vars, exports a frozen config object
 │   ├── db/
-│   │   ├── pool.js                  # pg Pool built from DATABASE_URL
-│   │   └── transaction.js           # withTransaction(fn)
+│   │   └── prisma.js                # createPrismaClient(): PrismaClient on @prisma/adapter-pg, from DATABASE_URL
+│   ├── generated/
+│   │   └── prisma/                  # Prisma Client output of `prisma generate` (git-ignored)
 │   ├── routes/
 │   │   ├── index.js                 # mounts all routers under /api
 │   │   ├── auth.routes.js
@@ -180,7 +188,9 @@ pc-parts-store/
 │   └── docs/
 │       └── openapi.yaml             # served at /api/docs
 ├── db/
-│   └── init.sql                     # full schema, run by Postgres on first start
+│   └── init.sql                     # full schema (source of truth), run by Postgres on first start
+├── prisma/
+│   └── schema.prisma                # Prisma models, introspected from the database with `prisma db pull`
 ├── seeds/
 │   ├── seed.js                      # idempotent: admin user + sample catalog
 │   └── data/catalog.js              # categories, brands, ~20 products with specs
@@ -193,6 +203,7 @@ pc-parts-store/
 ├── .dockerignore
 ├── .env.example
 ├── .prettierrc
+├── prisma.config.js                 # Prisma CLI config: schema path + DATABASE_URL
 └── package.json
 ```
 
@@ -302,7 +313,8 @@ erDiagram
 ### Schema
 
 Primary keys are `INTEGER GENERATED ALWAYS AS IDENTITY`. Money is `NUMERIC(10,2)`. All timestamps are `TIMESTAMPTZ`.
-`updated_at` is set explicitly by repository `UPDATE` queries (`updated_at = now()`); there are no triggers.
+`updated_at` is set by Prisma Client: the column is marked `@updatedAt` in `prisma/schema.prisma`, so every Prisma
+update sets it. There are no triggers, so a raw SQL `UPDATE` would have to set it itself.
 
 ```sql
 CREATE TYPE user_role      AS ENUM ('customer', 'admin');
@@ -431,19 +443,40 @@ CREATE TABLE reviews (
 );
 ```
 
+### Prisma models
+
+`prisma/schema.prisma` describes the same tables for Prisma Client. It was generated from the database with
+`prisma db pull` (introspection), then `@updatedAt` was added by hand to the `updated_at` columns.
+
+- Models keep the table and column names as they are (`users`, `password_hash`, …), so repositories return records
+  with `snake_case` fields and the mappers still do the `snake_case → camelCase` conversion. Relation fields are named
+  after the related table, e.g. `product.categories` and `product.brands`.
+- Prisma does not model `CHECK` constraints (introspection marks those models with a `///` comment). They are
+  enforced by PostgreSQL only.
+- `JSONB` columns are Prisma `Json` fields; `NUMERIC` columns are Prisma `Decimal` fields (see [Money](#money)).
+- The generator (`prisma-client`) writes the client to `src/generated/prisma` as TypeScript. `src/db/prisma.js`
+  imports `client.ts` directly and Node 24 runs it with its built-in type stripping, so there is no compile step.
+- `prisma.config.js` configures the Prisma CLI. It reads `DATABASE_URL` from the environment because Prisma 7 does
+  not load `.env` by itself; `prisma generate` doesn't need a database, so it also works without it.
+
 ### Schema initialization
 
-- There are no migrations. The whole schema above lives in a single file, `db/init.sql`.
+- There are no migrations, and Prisma Migrate is not used. `db/init.sql` is the source of truth for the schema.
 - Docker Compose mounts it into the `db` container's `/docker-entrypoint-initdb.d/`. The official Postgres image
   runs it **only when the data directory is empty**, i.e. on the first start of a fresh `pgdata` volume.
-- To change the schema, edit `db/init.sql` and recreate the database with `docker compose down -v`. All data is lost.
+- To change the schema:
+  1. Edit `db/init.sql` and recreate the database with `docker compose down -v`. All data is lost.
+  2. Run `npx prisma db pull` with `DATABASE_URL` set in your shell to the recreated database, and check that the
+     diff keeps the hand-added `@updatedAt` attributes.
+  3. Run `npx prisma generate` to regenerate the client locally (the Docker build does this itself).
 
 ### Money
 
-- Stored as `NUMERIC(10,2)`. `pg` returns `NUMERIC` values as **strings**, and the API keeps them as strings
+- Stored as `NUMERIC(10,2)`. Prisma returns `NUMERIC` values as `Decimal` objects, which are exact. Repositories turn
+  them into strings with `toFixed(2)` (a `Decimal` would serialize as `"2199"`), and the API keeps money as strings
   (`"2199.00"`) so precision is never lost to JavaScript floats.
-- All monetary arithmetic (line totals, order totals, cart totals) is done **in SQL**
-  (`SUM(unit_price * quantity)`), never in JavaScript.
+- All monetary arithmetic (line totals, order totals, cart totals) is done **in the database** or with `Decimal`
+  methods, never with JavaScript numbers.
 - The shop uses a single currency, **PLN**. Every DTO that contains money also includes `"currency": "PLN"`.
 
 ---
@@ -470,7 +503,8 @@ CREATE TABLE reviews (
   `includeInactive=true` and reactivate them with `PATCH { "isActive": true }`.
 - **Categories and brands** are hard-deleted, but only when no product (active or inactive) references them.
   Otherwise the API returns `409 CATEGORY_IN_USE` / `409 BRAND_IN_USE`.
-- A product's average rating and review count are computed in the product query (aggregate over `reviews`).
+- A product's average rating and review count come from one `reviews.groupBy` query (sum and count per product) for
+  all products being returned. The average is rounded to 2 decimals and is `null` when there are no reviews.
 
 ### Cart
 
@@ -487,13 +521,13 @@ Everything below runs in **one transaction**:
 
 1. The address (`addressId`) must belong to the customer, or the API returns `404`.
 2. Load the cart. If it is empty, return `409 CART_EMPTY`.
-3. Lock the involved product rows **in id order** to avoid deadlocks:
-   `SELECT id, name, price, stock, is_active FROM products WHERE id = ANY($1) ORDER BY id FOR UPDATE`.
+3. Lock the involved product rows **in id order** to avoid deadlocks, with raw SQL through `tx.$queryRaw`:
+   `SELECT id, name, price, stock, is_active FROM products WHERE id = ANY(${ids}) ORDER BY id FOR UPDATE`.
 4. If any product is inactive, return `409 PRODUCT_UNAVAILABLE`. If any quantity exceeds stock, return
    `409 INSUFFICIENT_STOCK`. In both cases `details` lists the offending product ids.
 5. Decrement stock for every item.
 6. Insert the order with the **shipping address snapshot**, insert `order_items` with **name and price snapshots**,
-   and compute `total_amount` in SQL.
+   and compute `total_amount` in the database.
 7. Clear the cart.
 8. `COMMIT` and respond `201` with the order.
 
@@ -658,7 +692,7 @@ Query parameters for `GET /api/products`:
 | `minPrice`        | `minPrice=500`              | Decimal, compared as `NUMERIC` in SQL                                      |
 | `maxPrice`        | `maxPrice=1500.50`          |                                                                            |
 | `inStock`         | `inStock=true`              | `stock > 0`                                                                |
-| `specs[<key>]`    | `specs[socket]=AM5`         | Exact match via `specs @> $n::jsonb` (GIN index). Numeric-looking values are matched as numbers, `true`/`false` as booleans. Requires `app.set('query parser', 'extended')`. |
+| `specs[<key>]`    | `specs[socket]=AM5`         | Exact match per key via Prisma's JSON path filter (`{ specs: { path: [key], equals: value } }`). Numeric-looking values are matched as numbers, `true`/`false` as booleans. Requires `app.set('query parser', 'extended')`. |
 | `sort`            | `sort=-price`               | One of `price`, `-price`, `name`, `-name`, `createdAt`, `-createdAt` (default `-createdAt`) |
 | `includeInactive` | `includeInactive=true`      | Admin only, ignored for others                                             |
 
@@ -765,7 +799,7 @@ clear message if something required is missing.
 | `POSTGRES_USER`             | `pcshop`                                        | Used by the `db` container                            |
 | `POSTGRES_PASSWORD`         | `pcshop`                                        | Used by the `db` container                            |
 | `POSTGRES_DB`               | `pcshop`                                        | Used by the `db` container                            |
-| `DATABASE_URL`              | `postgres://pcshop:pcshop@db:5432/pcshop`       | Used by the API                                       |
+| `DATABASE_URL`              | `postgres://pcshop:pcshop@db:5432/pcshop`       | Used by the API and the Prisma CLI (`prisma.config.js`) |
 | `JWT_SECRET`                | *(required)*                                    | HS256 secret, at least 32 characters                  |
 | `MOCK_PAYMENT_SUCCESS_RATE` | `0.8`                                           | Probability (0–1) that a mock payment is approved     |
 | `ADMIN_EMAIL`               | `admin@pcshop.local`                            | Seeded admin account                                  |
@@ -781,8 +815,9 @@ pagination default/max `20`/`100`, at most `3` addresses per customer.
 ### Prerequisites
 
 - Docker with Docker Compose v2.
-- *(Optional)* Node.js 24 locally, only for dev tooling (Prettier, running unit tests outside Docker).
-  The system itself runs entirely in containers.
+- *(Optional)* Node.js 24 locally, only for dev tooling (Prettier, the Prisma CLI, running unit tests outside Docker).
+  The system itself runs entirely in containers. The generated Prisma Client is git-ignored, so run
+  `npx prisma generate` after `npm install` before running code locally.
 
 ### Services
 
@@ -831,12 +866,16 @@ volumes:
 
 ### Image and startup
 
-- `Dockerfile` is based on `node:24-alpine`. It runs `npm ci --omit=dev`, copies the source, runs as the
-  non-root `node` user and exposes port `3000`.
+- `Dockerfile` is a two-stage build on `node:24-alpine`:
+  - **build** stage: `npm ci` (including the `prisma` dev dependency), then `npx prisma generate` writes Prisma Client
+    to `src/generated/prisma`. No database is needed for this.
+  - **runtime** stage: `npm ci --omit=dev --omit=optional`, copies the source and the generated client from the build
+    stage, runs as the non-root `node` user and exposes port `3000`. The Prisma CLI is not in the final image.
+- `src/generated` is listed in `.dockerignore`, so a local (possibly stale) client never ends up in the image.
 - The image's `CMD` is `["node", "src/server.js"]`. Compose overrides it with
   `sh -c "node seeds/seed.js && exec node src/server.js"`: the seed runs first, then `exec` replaces the shell with
   Node. Node is PID 1, so it receives `SIGTERM` from `docker compose stop` and shuts down gracefully
-  (close HTTP server → `pool.end()`).
+  (close HTTP server → `prisma.$disconnect()`).
 - If the seed fails (e.g. a missing `ADMIN_PASSWORD`), the server is not started. The container exits and is
   restarted by `restart: unless-stopped`, so the error repeats in `docker compose logs api` until it is fixed.
 - The database schema is created by the `db` container itself (see [Schema initialization](#schema-initialization)).
@@ -867,7 +906,7 @@ docker compose down -v                                  # stop and wipe the data
 ## Seed data
 
 `seeds/seed.js` runs automatically every time the `api` container starts, before the server. It is **idempotent** and
-runs in a single transaction, so it can also be re-run by hand with `docker compose exec api npm run seed`:
+runs in a single Prisma transaction (`prisma.$transaction`), so it can also be re-run by hand with `docker compose exec api npm run seed`:
 
 - **Admin**: created from `ADMIN_EMAIL` / `ADMIN_PASSWORD` if no user with that email exists.
 - **Sample catalog**: inserted only when the `products` table is empty:
@@ -883,8 +922,8 @@ runs in a single transaction, so it can also be re-run by hand with `docker comp
 - **Unit tests only**, using Node's built-in runner (`node --test`) and `mock.fn()` from `node:test`.
   No database is needed.
 - Test files live in `tests/unit/**` and are named `*.test.js`.
-- Services are built with mocked repositories and a fake `withTransaction` that just calls the callback with a
-  dummy client. Randomness (`random`) is injected, so payment outcomes are deterministic.
+- Services are built with mocked repositories and a fake `prisma` whose `$transaction` just calls the callback with
+  a dummy `tx`. Randomness (`random`) is injected, so payment outcomes are deterministic.
 
 Covered areas:
 
@@ -913,7 +952,7 @@ errors and failed health checks. Requests are not logged. View the logs with `do
 
 ### Health
 
-`GET /api/health` runs `SELECT 1` against the pool. It returns `200 { "status": "ok", "db": "up" }`, or
+`GET /api/health` runs `SELECT 1` through Prisma (`prisma.$queryRaw`). It returns `200 { "status": "ok", "db": "up" }`, or
 `503 { "status": "error", "db": "down" }`. Docker uses it as the `api` container healthcheck.
 
 ---
@@ -938,7 +977,10 @@ errors and failed health checks. Requests are not logged. View the logs with `do
 - **One DB lookup per authenticated request** (user status and role). This is a cheap primary-key lookup, and it is
   what makes blocking and role changes take effect immediately.
 - **No rate limiting**: login and registration are not throttled, so password guessing is only slowed by bcrypt.
-- **No migrations**: schema changes require recreating the database (`docker compose down -v`).
+- **No migrations**: schema changes require recreating the database (`docker compose down -v`) and re-introspecting
+  `prisma/schema.prisma` with `prisma db pull`.
+- **Spec filters don't use the GIN index**: Prisma's JSON path filter does not compile to `@>`, the operator the
+  `jsonb_path_ops` index serves, so filtering by `specs[...]` scans the matching products.
 - **Payments are simulated**: there is no real provider, webhooks or idempotency keys.
 - **Cart does not reserve stock**: availability is guaranteed only at checkout.
 - **Single currency (PLN)** and no tax or shipping-cost calculation.
