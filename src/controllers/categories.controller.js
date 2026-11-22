@@ -16,10 +16,20 @@ export function createCategoriesController({ categoryService }) {
     res.json(toCategoryDto(await categoryService.getById(req.params.id)));
   }
 
+  async function create(req, res) {
+    const { name, slug, description } = req.body;
+    res.status(201).json(toCategoryDto(await categoryService.create({ name, slug, description })));
+  }
+
+  async function update(req, res) {
+    const { name, slug, description } = req.body ?? {};
+    res.json(toCategoryDto(await categoryService.update(req.params.id, { name, slug, description })));
+  }
+
   async function remove(req, res) {
     await categoryService.remove(req.params.id);
     res.status(204).end();
   }
 
-  return { list, getById, remove };
+  return { list, getById, create, update, remove };
 }

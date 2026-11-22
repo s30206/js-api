@@ -11,6 +11,18 @@ export function createBrandRepository({ prisma }) {
     return db.brands.count();
   }
 
+  // A duplicate name makes Prisma throw an error with code P2002.
+  async function create({ name }, db = prisma) {
+    return db.brands.create({ data: { name } });
+  }
+
+  // Fields left undefined keep their current value. Returns null when the brand doesn't exist.
+  // updateManyAndReturn returns no row on a miss, where update() would throw.
+  async function update(id, { name }, db = prisma) {
+    const [brand] = await db.brands.updateManyAndReturn({ where: { id }, data: { name } });
+    return brand ?? null;
+  }
+
   // Returns false when the brand doesn't exist. While any product references it, the database refuses
   // (products.brand_id is ON DELETE RESTRICT) and Prisma throws an error with code P2003.
   async function remove(id, db = prisma) {
@@ -18,5 +30,5 @@ export function createBrandRepository({ prisma }) {
     return count > 0;
   }
 
-  return { findById, list, count, remove };
+  return { findById, list, count, create, update, remove };
 }

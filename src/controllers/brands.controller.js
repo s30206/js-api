@@ -16,10 +16,20 @@ export function createBrandsController({ brandService }) {
     res.json(toBrandDto(await brandService.getById(req.params.id)));
   }
 
+  async function create(req, res) {
+    const { name } = req.body;
+    res.status(201).json(toBrandDto(await brandService.create({ name })));
+  }
+
+  async function update(req, res) {
+    const { name } = req.body ?? {};
+    res.json(toBrandDto(await brandService.update(req.params.id, { name })));
+  }
+
   async function remove(req, res) {
     await brandService.remove(req.params.id);
     res.status(204).end();
   }
 
-  return { list, getById, remove };
+  return { list, getById, create, update, remove };
 }
