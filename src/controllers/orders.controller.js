@@ -20,5 +20,9 @@ export function createOrdersController({ orderService }) {
     res.json(toOrderDto(await orderService.getById(req.params.id, req.user)));
   }
 
-  return { checkout, list, getById };
+  async function updateStatus(req, res) {
+    res.json(toOrderDto(await orderService.updateStatus(req.params.id, req.body.status)));
+  }
+
+  return { checkout, list, getById, updateStatus };
 }

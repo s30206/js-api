@@ -5,6 +5,9 @@ function isAdmin(viewer) {
   return viewer.role === 'admin';
 }
 
+// The status an order must be in before an admin can move it to the key status. Cancelling is a separate action.
+const REQUIRED_STATUS = { shipped: 'paid', delivered: 'shipped' };
+
 function productDetails(lines) {
   return lines.map(({ product }) => ({ productId: product.id }));
 }
@@ -75,5 +78,18 @@ export function createOrderService({
     return order;
   }
 
-  return { checkout, list, getById };
+  // Admin only: paid -> shipped and shipped -> delivered. The row lock keeps the status from changing
+  // between the check and the update.
+  async function updateStatus(id, status) {
+    return prisma.$transaction(async (tx) => {
+      const order = await orderRepository.lockById(id, tx);
+      if (!order) throw new NotFoundError('Order not found');
+      if (order.status !== REQUIRED_STATUS[status]) {
+        throw new ConflictError('INVALID_ORDER_STATE', `Cannot change an order from ${order.status} to ${status}`);
+      }
+      return orderRepository.updateStatus(id, status, tx);
+    });
+  }
+
+  return { checkout, list, getById, updateStatus };
 }

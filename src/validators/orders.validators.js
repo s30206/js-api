@@ -18,3 +18,14 @@ export const listOrdersValidators = [
 ];
 
 export const orderIdValidators = [idParam()];
+
+// Only the statuses an admin sets directly; paid and cancelled come from the pay and cancel actions.
+const ADMIN_STATUSES = ['shipped', 'delivered'];
+
+export const updateOrderStatusValidators = [
+  idParam(),
+  body('status')
+    .isString().withMessage('Must be a string')
+    .bail()
+    .isIn(ADMIN_STATUSES).withMessage(`Must be one of: ${ADMIN_STATUSES.join(', ')}`),
+];

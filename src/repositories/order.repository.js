@@ -80,5 +80,18 @@ export function createOrderRepository({ prisma }) {
     return db.orders.count({ where: listWhere(filters) });
   }
 
-  return { create, findById, list, count };
+  // Row lock held until the surrounding transaction ends; serializes state changes to one order.
+  // Raw SQL because Prisma has no FOR UPDATE; tx must be the client from prisma.$transaction().
+  // Returns { id, status }, or null when the order doesn't exist.
+  async function lockById(id, tx) {
+    const [order] = await tx.$queryRaw`SELECT id, status FROM orders WHERE id = ${id} FOR UPDATE`;
+    return order ?? null;
+  }
+
+  async function updateStatus(id, status, db = prisma) {
+    const order = await db.orders.update({ where: { id }, data: { status }, include: INCLUDE });
+    return toRow(order);
+  }
+
+  return { create, findById, list, count, lockById, updateStatus };
 }

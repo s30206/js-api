@@ -771,6 +771,44 @@ paths:
         '403': { $ref: '#/components/responses/AccountDisabled' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
 
+  /orders/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    patch:
+      tags: [Orders]
+      summary: Mark an order shipped or delivered
+      description: >
+        Moves a `paid` order to `shipped`, or a `shipped` order to `delivered`. Paying and cancelling have their
+        own endpoints.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOrderStatusRequest' }
+      responses:
+        '200':
+          description: Updated order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404':
+          description: '`NOT_FOUND`: no order with this id'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`INVALID_ORDER_STATE`: the order is not in the status the requested one follows'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1071,6 +1109,12 @@ components:
       required: [addressId]
       properties:
         addressId: { type: integer, minimum: 1, description: One of the authenticated customer's addresses, example: 7 }
+
+    UpdateOrderStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [shipped, delivered], description: '`shipped` requires a `paid` order, `delivered` a `shipped` one' }
 
     OrderItem:
       type: object
