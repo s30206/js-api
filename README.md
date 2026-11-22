@@ -651,12 +651,12 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 
 | Method | Path                  | Access | Description                                      |
 |--------|-----------------------|--------|--------------------------------------------------|
-| GET    | `/api/categories`     | Public | List all categories                              |
+| GET    | `/api/categories`     | Public | Paginated list, ordered by id                    |
 | GET    | `/api/categories/:id` | Public | Category details                                 |
 | POST   | `/api/categories`     | Admin  | `{ name, slug, description? }`                   |
 | PATCH  | `/api/categories/:id` | Admin  | Partial update                                   |
 | DELETE | `/api/categories/:id` | Admin  | `204`, or `409 CATEGORY_IN_USE`                  |
-| GET    | `/api/brands`         | Public | List all brands                                  |
+| GET    | `/api/brands`         | Public | Paginated list, ordered by id                    |
 | GET    | `/api/brands/:id`     | Public | Brand details                                    |
 | POST   | `/api/brands`         | Admin  | `{ name }`                                       |
 | PATCH  | `/api/brands/:id`     | Admin  | Partial update                                   |

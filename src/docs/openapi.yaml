@@ -18,6 +18,10 @@ tags:
     description: The authenticated user's own account.
   - name: Users
     description: User administration (admin only).
+  - name: Categories
+    description: Product categories. Public.
+  - name: Brands
+    description: Product brands. Public.
   - name: Products
     description: Product catalog. Public; an admin token also unlocks inactive (delisted) products.
 
@@ -309,6 +313,82 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List categories
+      description: Ordered by id.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+      responses:
+        '200':
+          description: One page of categories
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /categories/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Categories]
+      summary: Get a category's details
+      responses:
+        '200':
+          description: The category
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/CategoryNotFound' }
+
+  /brands:
+    get:
+      tags: [Brands]
+      summary: List brands
+      description: Ordered by id.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+      responses:
+        '200':
+          description: One page of brands
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /brands/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Brands]
+      summary: Get a brand's details
+      responses:
+        '200':
+          description: The brand
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Brand' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/BrandNotFound' }
+
   /products:
     get:
       tags: [Products]
@@ -542,6 +622,44 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
+    Category:
+      type: object
+      required: [id, name, slug, description, createdAt, updatedAt]
+      properties:
+        id: { type: integer, example: 1 }
+        name: { type: string, example: CPU }
+        slug: { type: string, example: cpu }
+        description: { type: string, nullable: true, example: Desktop processors }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CategoryPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
+    Brand:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id: { type: integer, example: 1 }
+        name: { type: string, example: AMD }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    BrandPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Brand' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
     Product:
       type: object
       required:
@@ -648,6 +766,16 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     ProductNotFound:
       description: '`NOT_FOUND`: no product with this id, or it is inactive and the caller is not an admin'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    CategoryNotFound:
+      description: '`NOT_FOUND`: no category with this id'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BrandNotFound:
+      description: '`NOT_FOUND`: no brand with this id'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
