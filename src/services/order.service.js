@@ -8,6 +8,9 @@ function isAdmin(viewer) {
 // The status an order must be in before an admin can move it to the key status. Cancelling is a separate action.
 const REQUIRED_STATUS = { shipped: 'paid', delivered: 'shipped' };
 
+// The statuses each role can cancel an order from.
+const CANCELLABLE_STATUSES = { customer: ['pending'], admin: ['pending', 'paid'] };
+
 function productDetails(lines) {
   return lines.map(({ product }) => ({ productId: product.id }));
 }
@@ -120,5 +123,28 @@ export function createOrderService({
     });
   }
 
-  return { checkout, list, getById, pay, updateStatus };
+  // Customers can cancel their own pending orders; admins can cancel any pending or paid order. The stock of every
+  // item is restored, and a paid order's succeeded payment is marked refunded (simulated refund). The row lock keeps
+  // the status from changing between the check and the update.
+  async function cancel(id, viewer) {
+    return prisma.$transaction(async (tx) => {
+      const order = await orderRepository.lockById(id, tx);
+      if (!order || (!isAdmin(viewer) && order.user_id !== viewer.id)) throw new NotFoundError('Order not found');
+      if (!CANCELLABLE_STATUSES[viewer.role].includes(order.status)) {
+        throw new ConflictError('INVALID_ORDER_STATE', `Cannot cancel an order that is ${order.status}`);
+      }
+
+      const { items } = await orderRepository.findById(id, tx);
+      // Locked in id order before the updates, as checkout does, so the two can't deadlock on the same products.
+      await productRepository.lockByIds(items.map((item) => item.product_id), tx);
+      await productRepository.incrementStock(
+        items.map(({ product_id, quantity }) => ({ productId: product_id, quantity })),
+        tx,
+      );
+      if (order.status === 'paid') await paymentRepository.refund(id, tx);
+      return orderRepository.updateStatus(id, 'cancelled', tx);
+    });
+  }
+
+  return { checkout, list, getById, pay, updateStatus, cancel };
 }

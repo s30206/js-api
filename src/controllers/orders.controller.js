@@ -28,5 +28,9 @@ export function createOrdersController({ orderService }) {
     res.json(toOrderDto(await orderService.updateStatus(req.params.id, req.body.status)));
   }
 
-  return { checkout, list, getById, pay, updateStatus };
+  async function cancel(req, res) {
+    res.json(toOrderDto(await orderService.cancel(req.params.id, req.user)));
+  }
+
+  return { checkout, list, getById, pay, updateStatus, cancel };
 }

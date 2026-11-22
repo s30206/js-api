@@ -812,6 +812,38 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /orders/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [Orders]
+      summary: Cancel an order
+      description: >
+        Customers can cancel their own `pending` orders; admins can cancel any `pending` or `paid` order. The stock
+        of every item is restored, and cancelling a `paid` order marks its succeeded payment `refunded`
+        (simulated refund).
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Order cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AccountDisabled' }
+        '404': { $ref: '#/components/responses/OrderNotFound' }
+        '409':
+          description: >
+            `INVALID_ORDER_STATE`: the order can't be cancelled from its status (customers: only `pending`;
+            admins: `pending` or `paid`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /orders/{id}/status:
     parameters:
       - name: id

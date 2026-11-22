@@ -91,5 +91,12 @@ export function createProductRepository({ prisma }) {
     }
   }
 
-  return { findById, list, count, lockByIds, decrementStock };
+  // items are { productId, quantity }.
+  async function incrementStock(items, db = prisma) {
+    for (const { productId, quantity } of items) {
+      await db.products.update({ where: { id: productId }, data: { stock: { increment: quantity } } });
+    }
+  }
+
+  return { findById, list, count, lockByIds, decrementStock, incrementStock };
 }

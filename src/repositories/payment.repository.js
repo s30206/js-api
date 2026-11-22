@@ -6,5 +6,11 @@ export function createPaymentRepository({ prisma }) {
     });
   }
 
-  return { create };
+  // Simulated refund: marks the order's succeeded payment refunded. An order has at most one, since only a
+  // pending order can be paid.
+  async function refund(orderId, db = prisma) {
+    await db.payments.updateMany({ where: { order_id: orderId, status: 'succeeded' }, data: { status: 'refunded' } });
+  }
+
+  return { create, refund };
 }
