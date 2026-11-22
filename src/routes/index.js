@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createAuthRoutes } from './auth.routes.js';
 import { createBrandsRoutes } from './brands.routes.js';
+import { createCartRoutes } from './cart.routes.js';
 import { createCategoriesRoutes } from './categories.routes.js';
 import { createMeRoutes } from './me.routes.js';
 import { createProductsRoutes } from './products.routes.js';
@@ -16,6 +17,7 @@ export function createApiRouter(container) {
   router.use('/categories', createCategoriesRoutes(container));
   router.use('/brands', createBrandsRoutes(container));
   router.use('/products', createProductsRoutes(container));
+  router.use('/cart', createCartRoutes(container));
 
   return router;
 }

@@ -499,7 +499,7 @@ CREATE TABLE reviews (
 ### Cart
 
 - One cart per customer, stored in `cart_items`.
-- `PUT /api/cart/items/:productId` sets the quantity of a product (adds it if absent). The product must be active,
+- `PUT /api/cart/items/:id` (`id` is the product id) sets the quantity of a product (adds it if absent). The product must be active,
   `1 ≤ quantity ≤ 99`, and `quantity ≤ current stock` (else `409 INSUFFICIENT_STOCK`).
 - Adding to the cart **does not reserve stock**. Stock is checked again, strictly, at checkout.
 - `GET /api/cart` returns current prices, line totals, the cart total and an `available` flag per item
@@ -721,8 +721,8 @@ Example product:
 | Method | Path                         | Access   | Description                             |
 |--------|------------------------------|----------|-----------------------------------------|
 | GET    | `/api/cart`                  | Customer | Cart with line totals and total         |
-| PUT    | `/api/cart/items/:productId` | Customer | `{ quantity }`: add or set quantity     |
-| DELETE | `/api/cart/items/:productId` | Customer | Remove one product                      |
+| PUT    | `/api/cart/items/:id`        | Customer | `{ quantity }`: add or set quantity (`id` = product id) |
+| DELETE | `/api/cart/items/:id`        | Customer | Remove one product (`id` = product id)  |
 | DELETE | `/api/cart`                  | Customer | Clear the cart                          |
 
 Example cart:

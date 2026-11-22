@@ -24,6 +24,8 @@ tags:
     description: Product brands. Reading is public; creating, updating and deleting are admin only.
   - name: Products
     description: Product catalog. Public; an admin token also unlocks inactive (delisted) products.
+  - name: Cart
+    description: The authenticated customer's persistent cart (customers only). Adding to the cart does not reserve stock.
 
 paths:
   /health:
@@ -605,6 +607,83 @@ paths:
         '403': { $ref: '#/components/responses/AccountDisabled' }
         '404': { $ref: '#/components/responses/ProductNotFound' }
 
+  /cart:
+    get:
+      tags: [Cart]
+      summary: Get the authenticated customer's cart
+      description: >
+        Items are listed in the order they were added, with the product's current price. An item has
+        `available: false` when its product was delisted or its stock dropped below the cart quantity.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The cart (empty `items` and a `total` of `0.00` when nothing was added)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+    delete:
+      tags: [Cart]
+      summary: Remove everything from the authenticated customer's cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Cart cleared (also when it was already empty)
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+
+  /cart/items/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Id of the product
+        schema: { type: integer, minimum: 1 }
+    put:
+      tags: [Cart]
+      summary: Add a product to the cart or set its quantity
+      description: >
+        Sets the quantity to exactly the given value (it does not add to the current one), creating the cart
+        item when the product is not in the cart yet. Stock is checked here but not reserved; checkout
+        checks it again.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetCartItemRequest' }
+      responses:
+        '200':
+          description: The updated cart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '404': { $ref: '#/components/responses/CartProductNotFound' }
+        '409':
+          description: '`INSUFFICIENT_STOCK`: the quantity is higher than the product''s current stock'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [Cart]
+      summary: Remove one product from the cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Product removed from the cart
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '404':
+          description: '`NOT_FOUND`: the product is not in the authenticated customer''s cart'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -865,6 +944,41 @@ components:
           items: { $ref: '#/components/schemas/Product' }
         meta: { $ref: '#/components/schemas/PageMeta' }
 
+    SetCartItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity: { type: integer, minimum: 1, maximum: 99, example: 2 }
+
+    CartItem:
+      type: object
+      required: [product, quantity, lineTotal, available]
+      properties:
+        product:
+          type: object
+          required: [id, name, price, stock, isActive]
+          properties:
+            id: { type: integer, example: 12 }
+            name: { type: string, example: AMD Ryzen 7 9800X3D }
+            price: { type: string, description: Current unit price as a decimal string, example: '2199.00' }
+            stock: { type: integer, example: 14 }
+            isActive: { type: boolean, description: '`false` means the product is delisted' }
+        quantity: { type: integer, example: 1 }
+        lineTotal: { type: string, description: '`price` times `quantity` as a decimal string', example: '2199.00' }
+        available:
+          type: boolean
+          description: '`false` when the product is inactive or its stock is below `quantity`'
+
+    Cart:
+      type: object
+      required: [items, total, currency]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CartItem' }
+        total: { type: string, description: Sum of all line totals as a decimal string, example: '2199.00' }
+        currency: { type: string, enum: [PLN] }
+
     Error:
       type: object
       required: [error]
@@ -922,6 +1036,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     ProductNotFound:
       description: '`NOT_FOUND`: no product with this id, or it is inactive and the caller is not an admin'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    CartProductNotFound:
+      description: '`NOT_FOUND`: no active product with this id'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
