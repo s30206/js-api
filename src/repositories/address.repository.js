@@ -3,6 +3,11 @@ export function createAddressRepository({ prisma }) {
     return db.addresses.findMany({ where: { user_id: userId }, orderBy: { id: 'asc' } });
   }
 
+  // Returns null when the address doesn't exist or belongs to another user.
+  async function findById(id, userId, db = prisma) {
+    return db.addresses.findFirst({ where: { id, user_id: userId } });
+  }
+
   async function countByUser(userId, db = prisma) {
     return db.addresses.count({ where: { user_id: userId } });
   }
@@ -48,5 +53,5 @@ export function createAddressRepository({ prisma }) {
     return count > 0;
   }
 
-  return { listByUser, countByUser, create, update, remove };
+  return { listByUser, findById, countByUser, create, update, remove };
 }

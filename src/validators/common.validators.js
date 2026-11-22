@@ -58,6 +58,16 @@ export function paginationQueries() {
   return [intQuery('page', 1, MAX_INT), intQuery('limit', config.defaultPageSize, config.maxPageSize)];
 }
 
+// isString() rejects repeated parameters (?brandId=1&brandId=2), which arrive as arrays.
+export function idQuery(field) {
+  return query(field)
+    .optional()
+    .isString().withMessage('Must be a string')
+    .bail()
+    .isInt({ min: 1, max: MAX_INT }).withMessage('Must be a positive integer')
+    .toInt();
+}
+
 export function booleanQuery(field) {
   return query(field)
     .optional()

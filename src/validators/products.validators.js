@@ -1,18 +1,8 @@
 import { query } from 'express-validator';
-import { booleanQuery, idParam, MAX_INT, paginationQueries } from './common.validators.js';
+import { booleanQuery, idParam, idQuery, paginationQueries } from './common.validators.js';
 
 const SORTS = ['price', '-price', 'name', '-name', 'createdAt', '-createdAt'];
 const MAX_SPEC_KEYS = 30;
-
-// isString() rejects repeated parameters (?brandId=1&brandId=2), which arrive as arrays.
-function idQuery(field) {
-  return query(field)
-    .optional()
-    .isString().withMessage('Must be a string')
-    .bail()
-    .isInt({ min: 1, max: MAX_INT }).withMessage('Must be a positive integer')
-    .toInt();
-}
 
 // Fits NUMERIC(10,2), the type of products.price. Kept as a string and compared as NUMERIC in SQL.
 function priceQuery(field) {

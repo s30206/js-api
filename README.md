@@ -517,7 +517,7 @@ Everything below runs in **one transaction**:
    `409 INSUFFICIENT_STOCK`. In both cases `details` lists the offending product ids.
 5. Decrement stock for every item.
 6. Insert the order with the **shipping address snapshot**, insert `order_items` with **name and price snapshots**,
-   and compute `total_amount` in the database.
+   and compute `total_amount` from the locked prices with `Decimal` methods.
 7. Clear the cart.
 8. `COMMIT` and respond `201` with the order.
 

@@ -1,0 +1,79 @@
+import { ConflictError, NotFoundError } from '../errors/AppError.js';
+
+// viewer is req.user. Customers only ever see their own orders; admins see all of them.
+function isAdmin(viewer) {
+  return viewer.role === 'admin';
+}
+
+function productDetails(lines) {
+  return lines.map(({ product }) => ({ productId: product.id }));
+}
+
+export function createOrderService({
+  orderRepository,
+  cartRepository,
+  productRepository,
+  addressRepository,
+  userRepository,
+  prisma,
+}) {
+  // Turns the customer's cart into an order in one transaction: either everything below happens or nothing does.
+  async function checkout(userId, addressId) {
+    return prisma.$transaction(async (tx) => {
+      // Locking the user row serializes the customer's checkouts and cart changes, so one cart can't be
+      // ordered twice by concurrent requests.
+      await userRepository.lockById(userId, tx);
+
+      const address = await addressRepository.findById(addressId, userId, tx);
+      if (!address) throw new NotFoundError('Address not found');
+
+      const { items } = await cartRepository.findByUser(userId, tx);
+      if (items.length === 0) throw new ConflictError('CART_EMPTY', 'The cart is empty');
+
+      // Stock, prices and active flags are read again under row locks, so they can't change until the commit.
+      const products = await productRepository.lockByIds(items.map((item) => item.product_id), tx);
+      const productsById = new Map(products.map((product) => [product.id, product]));
+      const lines = items.map(({ product_id, quantity }) => ({ product: productsById.get(product_id), quantity }));
+
+      const unavailable = lines.filter(({ product }) => !product.is_active);
+      if (unavailable.length > 0) {
+        throw new ConflictError(
+          'PRODUCT_UNAVAILABLE',
+          'Some products are no longer available',
+          productDetails(unavailable),
+        );
+      }
+      const outOfStock = lines.filter(({ product, quantity }) => quantity > product.stock);
+      if (outOfStock.length > 0) {
+        throw new ConflictError('INSUFFICIENT_STOCK', 'Some products are out of stock', productDetails(outOfStock));
+      }
+
+      await productRepository.decrementStock(
+        lines.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+        tx,
+      );
+      const order = await orderRepository.create(userId, address, lines, tx);
+      await cartRepository.clear(userId, tx);
+      return order;
+    });
+  }
+
+  // The userId filter is admin only; customers are always limited to their own orders.
+  async function list({ page, limit, status, userId }, viewer) {
+    const filters = { status, userId: isAdmin(viewer) ? userId : viewer.id };
+    const [orders, total] = await Promise.all([
+      orderRepository.list(filters, { limit, offset: (page - 1) * limit }),
+      orderRepository.count(filters),
+    ]);
+    return { orders, total };
+  }
+
+  // To a customer, another customer's order looks the same as one that doesn't exist.
+  async function getById(id, viewer) {
+    const order = await orderRepository.findById(id);
+    if (!order || (!isAdmin(viewer) && order.user_id !== viewer.id)) throw new NotFoundError('Order not found');
+    return order;
+  }
+
+  return { checkout, list, getById };
+}

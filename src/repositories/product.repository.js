@@ -77,5 +77,19 @@ export function createProductRepository({ prisma }) {
     return db.products.count({ where: listWhere(filters) });
   }
 
-  return { findById, list, count };
+  // Row locks held until the surrounding transaction ends. Rows are locked in id order, so two transactions
+  // locking overlapping sets can't deadlock. Raw SQL because Prisma has no FOR UPDATE; tx must be the client
+  // from prisma.$transaction(). price comes back as a Prisma Decimal.
+  async function lockByIds(ids, tx) {
+    return tx.$queryRaw`SELECT id, name, price, stock, is_active FROM products WHERE id = ANY(${ids}) ORDER BY id FOR UPDATE`;
+  }
+
+  // items are { productId, quantity }. The CHECK (stock >= 0) constraint rejects a decrement below zero.
+  async function decrementStock(items, db = prisma) {
+    for (const { productId, quantity } of items) {
+      await db.products.update({ where: { id: productId }, data: { stock: { decrement: quantity } } });
+    }
+  }
+
+  return { findById, list, count, lockByIds, decrementStock };
 }
