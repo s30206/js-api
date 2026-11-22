@@ -3,8 +3,7 @@ import { createHealthController } from './controllers/health.controller.js';
 import { createMeController } from './controllers/me.controller.js';
 import { createProductsController } from './controllers/products.controller.js';
 import { createUsersController } from './controllers/users.controller.js';
-import { createPool } from './db/pool.js';
-import { createWithTransaction } from './db/transaction.js';
+import { createPrismaClient } from './db/prisma.js';
 import { createAuthenticate, createAuthenticateOptional } from './middleware/authenticate.js';
 import { createAddressRepository } from './repositories/address.repository.js';
 import { createProductRepository } from './repositories/product.repository.js';
@@ -14,28 +13,27 @@ import { createAuthService } from './services/auth.service.js';
 import { createProductService } from './services/product.service.js';
 import { createUserService } from './services/user.service.js';
 
-// Composition root: pool - repositories - services - controllers.
+// Composition root: prisma - repositories - services - controllers.
 export function createContainer() {
-  const pool = createPool();
-  const withTransaction = createWithTransaction({ pool });
+  const prisma = createPrismaClient();
 
-  const userRepository = createUserRepository({ pool });
-  const addressRepository = createAddressRepository({ pool });
-  const productRepository = createProductRepository({ pool });
+  const userRepository = createUserRepository({ prisma });
+  const addressRepository = createAddressRepository({ prisma });
+  const productRepository = createProductRepository({ prisma });
 
   const authService = createAuthService({ userRepository });
   const userService = createUserService({ userRepository });
-  const addressService = createAddressService({ addressRepository, userRepository, withTransaction });
+  const addressService = createAddressService({ addressRepository, userRepository, prisma });
   const productService = createProductService({ productRepository });
 
   return {
-    pool,
+    prisma,
     authenticate: createAuthenticate({ authService }),
     authenticateOptional: createAuthenticateOptional({ authService }),
     authController: createAuthController({ authService }),
     meController: createMeController({ userService, authService, addressService }),
     usersController: createUsersController({ userService }),
     productsController: createProductsController({ productService }),
-    healthController: createHealthController({ pool }),
+    healthController: createHealthController({ prisma }),
   };
 }

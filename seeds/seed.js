@@ -1,8 +1,7 @@
 // Idempotent: runs every time the api container starts (see docker-compose.yml) and is safe to re-run by hand.
 //   - Admin: created from ADMIN_EMAIL / ADMIN_PASSWORD if no user with that email exists.
 //   - Sample catalog: inserted only when the products table is empty.
-import { createPool } from '../src/db/pool.js';
-import { createWithTransaction } from '../src/db/transaction.js';
+import { createPrismaClient } from '../src/db/prisma.js';
 import { hashPassword } from '../src/utils/password.js';
 import { brands, categories, products } from './data/catalog.js';
 
@@ -16,54 +15,57 @@ function adminCredentials() {
   return { email, password };
 }
 
-async function seedAdmin(client, { email, password }) {
-  const { rowCount } = await client.query('SELECT 1 FROM users WHERE email = $1', [email]);
-  if (rowCount > 0) return false;
+async function seedAdmin(tx, { email, password }) {
+  if (await tx.users.findUnique({ where: { email }, select: { id: true } })) return false;
 
-  await client.query(
-    `INSERT INTO users (email, password_hash, first_name, last_name, role)
-     VALUES ($1, $2, 'Admin', 'User', 'admin')`,
-    [email, await hashPassword(password)],
-  );
+  await tx.users.create({
+    data: {
+      email,
+      password_hash: await hashPassword(password),
+      first_name: 'Admin',
+      last_name: 'User',
+      role: 'admin',
+    },
+  });
   return true;
 }
 
-async function seedCatalog(client) {
-  const { rowCount } = await client.query('SELECT 1 FROM products LIMIT 1');
-  if (rowCount > 0) return false;
+async function seedCatalog(tx) {
+  if (await tx.products.findFirst({ select: { id: true } })) return false;
 
-  const categoryIds = new Map();
-  for (const { name, slug, description } of categories) {
-    const { rows } = await client.query(
-      'INSERT INTO categories (name, slug, description) VALUES ($1, $2, $3) RETURNING id',
-      [name, slug, description],
-    );
-    categoryIds.set(slug, rows[0].id);
-  }
+  const createdCategories = await tx.categories.createManyAndReturn({
+    data: categories,
+    select: { id: true, slug: true },
+  });
+  const categoryIds = new Map(createdCategories.map(({ id, slug }) => [slug, id]));
 
-  const brandIds = new Map();
-  for (const name of brands) {
-    const { rows } = await client.query('INSERT INTO brands (name) VALUES ($1) RETURNING id', [name]);
-    brandIds.set(name, rows[0].id);
-  }
+  const createdBrands = await tx.brands.createManyAndReturn({
+    data: brands.map((name) => ({ name })),
+    select: { id: true, name: true },
+  });
+  const brandIds = new Map(createdBrands.map(({ id, name }) => [name, id]));
 
-  for (const p of products) {
-    await client.query(
-      `INSERT INTO products (category_id, brand_id, sku, name, description, price, stock, specs)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [categoryIds.get(p.category), brandIds.get(p.brand), p.sku, p.name, p.description, p.price, p.stock, p.specs],
-    );
-  }
+  await tx.products.createMany({
+    data: products.map((p) => ({
+      category_id: categoryIds.get(p.category),
+      brand_id: brandIds.get(p.brand),
+      sku: p.sku,
+      name: p.name,
+      description: p.description,
+      price: p.price,
+      stock: p.stock,
+      specs: p.specs,
+    })),
+  });
   return true;
 }
 
 const admin = adminCredentials();
-const pool = createPool();
-const withTransaction = createWithTransaction({ pool });
+const prisma = createPrismaClient();
 try {
-  const { adminCreated, catalogSeeded } = await withTransaction(async (client) => ({
-    adminCreated: await seedAdmin(client, admin),
-    catalogSeeded: await seedCatalog(client),
+  const { adminCreated, catalogSeeded } = await prisma.$transaction(async (tx) => ({
+    adminCreated: await seedAdmin(tx, admin),
+    catalogSeeded: await seedCatalog(tx),
   }));
 
   console.log(adminCreated ? `Admin ${admin.email} created` : `Admin ${admin.email} already exists, skipped`);
@@ -72,6 +74,11 @@ try {
       ? `Catalog seeded: ${categories.length} categories, ${brands.length} brands, ${products.length} products`
       : 'Products already exist, catalog skipped',
   );
-} finally {
-  await pool.end();
+}
+catch (err) {
+  console.error('Seeding failed:', err);
+  process.exitCode = 1;
+} 
+finally {
+  await prisma.$disconnect();
 }

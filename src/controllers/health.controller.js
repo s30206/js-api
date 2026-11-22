@@ -1,7 +1,7 @@
-export function createHealthController({ pool }) {
+export function createHealthController({ prisma }) {
   async function check(req, res) {
     try {
-      await pool.query('SELECT 1');
+      await prisma.$queryRaw`SELECT 1`;
       res.json({ status: 'ok', db: 'up' });
     } catch (err) {
       console.warn('Health check failed: database unreachable', err);

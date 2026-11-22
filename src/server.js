@@ -13,7 +13,7 @@ const server = createApp(container).listen(port, (error) => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, () => {
     server.close(async () => {
-      await container.pool.end();
+      await container.prisma.$disconnect();
       process.exit(0);
     });
   });
