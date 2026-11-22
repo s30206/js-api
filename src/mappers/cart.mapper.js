@@ -1,4 +1,6 @@
 // Expects { items, total } from the cart service: item rows from the cart repository plus an `available` flag.
+import { config } from '../config/index.js';
+
 export function toCartDto({ items, total }) {
   return {
     items: items.map((item) => ({
@@ -14,6 +16,6 @@ export function toCartDto({ items, total }) {
       available: item.available,
     })),
     total,
-    currency: 'PLN',
+    currency: config.currency,
   };
 }

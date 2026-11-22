@@ -12,6 +12,7 @@ export const config = Object.freeze({
   jwtSecret,
   accessTokenTtlSeconds: 3600,
   bcryptCost: 12,
+  currency: 'PLN',
   maxAddressesPerUser: 3,
   maxCartItemQuantity: 99,
   defaultPageSize: 5,
