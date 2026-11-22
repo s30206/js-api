@@ -1,4 +1,4 @@
-import { ConflictError, NotFoundError } from '../errors/AppError.js';
+import { ConflictError, NotFoundError, PaymentDeclinedError } from '../errors/AppError.js';
 
 // viewer is req.user. Customers only ever see their own orders; admins see all of them.
 function isAdmin(viewer) {
@@ -18,6 +18,8 @@ export function createOrderService({
   productRepository,
   addressRepository,
   userRepository,
+  paymentRepository,
+  paymentService,
   prisma,
 }) {
   // Turns the customer's cart into an order in one transaction: either everything below happens or nothing does.
@@ -78,6 +80,33 @@ export function createOrderService({
     return order;
   }
 
+  // Customer only: pending -> paid. Every attempt is recorded, so a declined payment's failed row has to commit:
+  // the transaction returns null and PaymentDeclinedError is thrown after it, leaving the order pending.
+  // The row lock keeps concurrent attempts from paying the same order twice.
+  async function pay(id, userId, cardNumber) {
+    const paidOrder = await prisma.$transaction(async (tx) => {
+      const order = await orderRepository.lockById(id, tx);
+      if (!order || order.user_id !== userId) throw new NotFoundError('Order not found');
+      if (order.status !== 'pending') {
+        throw new ConflictError('INVALID_ORDER_STATE', `Cannot pay for an order that is ${order.status}`);
+      }
+      const approved = paymentService.charge();
+      await paymentRepository.create(
+        id,
+        {
+          amount: order.total_amount,
+          status: approved ? 'succeeded' : 'failed',
+          cardLast4: cardNumber.slice(-4),
+          failureReason: approved ? null : 'CARD_DECLINED',
+        },
+        tx,
+      );
+      return approved ? orderRepository.updateStatus(id, 'paid', tx) : null;
+    });
+    if (!paidOrder) throw new PaymentDeclinedError();
+    return paidOrder;
+  }
+
   // Admin only: paid -> shipped and shipped -> delivered. The row lock keeps the status from changing
   // between the check and the update.
   async function updateStatus(id, status) {
@@ -91,5 +120,5 @@ export function createOrderService({
     });
   }
 
-  return { checkout, list, getById, updateStatus };
+  return { checkout, list, getById, pay, updateStatus };
 }

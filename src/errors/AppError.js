@@ -32,6 +32,12 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class PaymentDeclinedError extends AppError {
+  constructor(message = 'The payment was declined') {
+    super(402, 'PAYMENT_DECLINED', message);
+  }
+}
+
 export class ConflictError extends AppError {
   constructor(code = 'CONFLICT', message = 'Conflict', details) {
     super(409, code, message, details);

@@ -771,6 +771,47 @@ paths:
         '403': { $ref: '#/components/responses/AccountDisabled' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
 
+  /orders/{id}/pay:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      tags: [Orders]
+      summary: Pay for an order
+      description: >
+        Charges the card through a simulated payment provider that approves a payment at random
+        (`MOCK_PAYMENT_SUCCESS_RATE`, 0.8 by default). The order must be the authenticated customer's and `pending`.
+        Every attempt is added to the order's `payments` with only the card's last 4 digits. An approved payment
+        makes the order `paid`; a declined one leaves it `pending`, so the customer can try again.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayOrderRequest' }
+      responses:
+        '200':
+          description: Payment approved; the order is now `paid`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402':
+          description: '`PAYMENT_DECLINED`: the card was declined; the failed attempt is recorded and the order stays `pending`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '404': { $ref: '#/components/responses/OrderNotFound' }
+        '409':
+          description: '`INVALID_ORDER_STATE`: the order is not `pending`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /orders/{id}/status:
     parameters:
       - name: id
@@ -1109,6 +1150,16 @@ components:
       required: [addressId]
       properties:
         addressId: { type: integer, minimum: 1, description: One of the authenticated customer's addresses, example: 7 }
+
+    PayOrderRequest:
+      type: object
+      required: [cardNumber]
+      properties:
+        cardNumber:
+          type: string
+          pattern: '^\d{12,19}$'
+          description: 12-19 digits. Only the last 4 are stored.
+          example: '4111111111111111'
 
     UpdateOrderStatusRequest:
       type: object

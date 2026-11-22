@@ -82,9 +82,10 @@ export function createOrderRepository({ prisma }) {
 
   // Row lock held until the surrounding transaction ends; serializes state changes to one order.
   // Raw SQL because Prisma has no FOR UPDATE; tx must be the client from prisma.$transaction().
-  // Returns { id, status }, or null when the order doesn't exist.
+  // Returns { id, user_id, status, total_amount } with total_amount as a Prisma Decimal, or null when the order
+  // doesn't exist.
   async function lockById(id, tx) {
-    const [order] = await tx.$queryRaw`SELECT id, status FROM orders WHERE id = ${id} FOR UPDATE`;
+    const [order] = await tx.$queryRaw`SELECT id, user_id, status, total_amount FROM orders WHERE id = ${id} FOR UPDATE`;
     return order ?? null;
   }
 

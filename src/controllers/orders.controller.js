@@ -20,9 +20,13 @@ export function createOrdersController({ orderService }) {
     res.json(toOrderDto(await orderService.getById(req.params.id, req.user)));
   }
 
+  async function pay(req, res) {
+    res.json(toOrderDto(await orderService.pay(req.params.id, req.user.id, req.body.cardNumber)));
+  }
+
   async function updateStatus(req, res) {
     res.json(toOrderDto(await orderService.updateStatus(req.params.id, req.body.status)));
   }
 
-  return { checkout, list, getById, updateStatus };
+  return { checkout, list, getById, pay, updateStatus };
 }

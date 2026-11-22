@@ -14,6 +14,7 @@ import { createBrandRepository } from './repositories/brand.repository.js';
 import { createCartRepository } from './repositories/cart.repository.js';
 import { createCategoryRepository } from './repositories/category.repository.js';
 import { createOrderRepository } from './repositories/order.repository.js';
+import { createPaymentRepository } from './repositories/payment.repository.js';
 import { createProductRepository } from './repositories/product.repository.js';
 import { createUserRepository } from './repositories/user.repository.js';
 import { createAddressService } from './services/address.service.js';
@@ -22,6 +23,7 @@ import { createBrandService } from './services/brand.service.js';
 import { createCartService } from './services/cart.service.js';
 import { createCategoryService } from './services/category.service.js';
 import { createOrderService } from './services/order.service.js';
+import { createPaymentService } from './services/payment.service.js';
 import { createProductService } from './services/product.service.js';
 import { createUserService } from './services/user.service.js';
 
@@ -36,6 +38,7 @@ export function createContainer() {
   const brandRepository = createBrandRepository({ prisma });
   const cartRepository = createCartRepository({ prisma });
   const orderRepository = createOrderRepository({ prisma });
+  const paymentRepository = createPaymentRepository({ prisma });
 
   const authService = createAuthService({ userRepository });
   const userService = createUserService({ userRepository });
@@ -44,12 +47,15 @@ export function createContainer() {
   const categoryService = createCategoryService({ categoryRepository });
   const brandService = createBrandService({ brandRepository });
   const cartService = createCartService({ cartRepository, productRepository, userRepository, prisma });
+  const paymentService = createPaymentService();
   const orderService = createOrderService({
     orderRepository,
     cartRepository,
     productRepository,
     addressRepository,
     userRepository,
+    paymentRepository,
+    paymentService,
     prisma,
   });
 

@@ -19,6 +19,14 @@ export const listOrdersValidators = [
 
 export const orderIdValidators = [idParam()];
 
+export const payOrderValidators = [
+  idParam(),
+  body('cardNumber')
+    .isString().withMessage('Must be a string')
+    .bail()
+    .matches(/^\d{12,19}$/).withMessage('Must be 12-19 digits'),
+];
+
 // Only the statuses an admin sets directly; paid and cancelled come from the pay and cancel actions.
 const ADMIN_STATUSES = ['shipped', 'delivered'];
 
