@@ -20,10 +20,9 @@ The whole system runs in **Docker**.
 9. [Configuration](#configuration)
 10. [Running with Docker](#running-with-docker)
 11. [Seed data](#seed-data)
-12. [Testing](#testing)
-13. [Logging & health](#logging--health)
-14. [npm scripts](#npm-scripts)
-15. [Known limitations & trade-offs](#known-limitations--trade-offs)
+12. [Health](#health)
+13. [npm scripts](#npm-scripts)
+14. [Known limitations & trade-offs](#known-limitations--trade-offs)
 
 ---
 
@@ -55,8 +54,6 @@ The whole system runs in **Docker**.
 | Validation         | `express-validator`                                                    |
 | Auth               | `jsonwebtoken` (HS256), `bcryptjs` for password hashing                |
 | API docs           | `swagger-ui-express` serving a hand-written `openapi.yaml` (parsed with `yaml`) |
-| Tests              | Built-in `node:test` runner + `node:test` mocks (unit tests only)      |
-| Formatting         | Prettier                                                               |
 | Containers         | Docker, Docker Compose (`api` + `db`)                                  |
 
 ---
@@ -103,8 +100,6 @@ export function createOrderService({ orderRepository, productRepository, cartRep
   // ...
 }
 ```
-
-This keeps services trivially unit-testable: tests pass mocked repositories instead of a database.
 
 ### Transactions
 
@@ -194,15 +189,10 @@ pc-parts-store/
 ├── seeds/
 │   ├── seed.js                      # idempotent: admin user + sample catalog
 │   └── data/catalog.js              # categories, brands, ~20 products with specs
-├── tests/
-│   └── unit/
-│       ├── services/                # *.test.js, repositories mocked
-│       └── middleware/              # authenticate / authorize tests
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .dockerignore
 ├── .env.example
-├── .prettierrc
 ├── prisma.config.js                 # Prisma CLI config: schema path + DATABASE_URL
 └── package.json
 ```
@@ -557,7 +547,7 @@ stateDiagram-v2
   and the number is never logged.
 - The order must belong to the customer and be `pending`.
 - `payment.service.js` simulates a provider: a payment is approved when `random() < MOCK_PAYMENT_SUCCESS_RATE`
-  (default `0.8`). `random` is injected (defaults to `Math.random`), which makes outcomes deterministic in tests.
+  (default `0.8`). `random` is injected (defaults to `Math.random`).
 - Every attempt inserts a `payments` row (`succeeded` or `failed` with `failure_reason = 'CARD_DECLINED'`).
 - **Approved**: the order becomes `paid`, and the response is `200` with the order.
 - **Declined**: the failed attempt is committed and the order **stays `pending`**. The response is `402 PAYMENT_DECLINED`.
@@ -586,7 +576,7 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 
 - Base path: **`/api`**. JSON in, JSON out. Field names are `camelCase`.
 - Auth header: `Authorization: Bearer <accessToken>`.
-- **Pagination** (all list endpoints except `GET /api/me/addresses`): `?page=1&limit=20` (`limit` max `100`). Response shape:
+- **Pagination** (all list endpoints except `GET /api/me/addresses`): `?page=1&limit=20` (`limit` defaults to `5`, max `20`). Response shape:
 
   ```json
   {
@@ -806,7 +796,7 @@ clear message if something required is missing.
 | `ADMIN_PASSWORD`            | *(required)*                                    | Seeded admin password                                 |
 
 Fixed constants (in `config/index.js`, not env): token lifetime `3600 s`, bcrypt cost `12`, currency `PLN`,
-pagination default/max `20`/`100`, at most `3` addresses per customer.
+pagination default/max `5`/`20`, at most `3` addresses per customer.
 
 ---
 
@@ -815,7 +805,7 @@ pagination default/max `20`/`100`, at most `3` addresses per customer.
 ### Prerequisites
 
 - Docker with Docker Compose v2.
-- *(Optional)* Node.js 24 locally, only for dev tooling (Prettier, the Prisma CLI, running unit tests outside Docker).
+- *(Optional)* Node.js 24 locally, only for dev tooling (the Prisma CLI).
   The system itself runs entirely in containers. The generated Prisma Client is git-ignored, so run
   `npx prisma generate` after `npm install` before running code locally.
 
@@ -896,7 +886,6 @@ docker compose logs -f api    # starts with what the seed created or skipped
 
 ```bash
 docker compose exec db psql -U pcshop -d pcshop         # open a psql shell
-docker compose run --rm --no-deps api npm test          # run unit tests inside the image
 docker compose down                                     # stop (data kept in the pgdata volume)
 docker compose down -v                                  # stop and wipe the database (re-runs db/init.sql next start)
 ```
@@ -917,40 +906,7 @@ runs in a single Prisma transaction (`prisma.$transaction`), so it can also be r
 
 ---
 
-## Testing
-
-- **Unit tests only**, using Node's built-in runner (`node --test`) and `mock.fn()` from `node:test`.
-  No database is needed.
-- Test files live in `tests/unit/**` and are named `*.test.js`.
-- Services are built with mocked repositories and a fake `prisma` whose `$transaction` just calls the callback with
-  a dummy `tx`. Randomness (`random`) is injected, so payment outcomes are deterministic.
-
-Covered areas:
-
-| Module                  | Scenarios                                                                                                   |
-|-------------------------|-------------------------------------------------------------------------------------------------------------|
-| `auth.service`          | register (email taken, password hashed); login (wrong password, unknown email, blocked user); password change verifies current password |
-| `authenticate` middleware | missing header, invalid signature, expired token, blocked user, success attaches `req.user`            |
-| `authorize` middleware  | allowed / forbidden roles                                                                                   |
-| `order.service`         | checkout (empty cart, foreign address, inactive product, insufficient stock, success decrements stock and clears cart); pay (approved, declined keeps `pending`, non-pending order); cancel (customer vs admin rules, stock restore, refund); status transitions |
-| `review.service`        | non-buyer rejected, duplicate review, author-only edit, admin delete                                        |
-| `cart.service`          | inactive product, quantity above stock                                                                      |
-
-```bash
-npm test                                       # locally (Node 24)
-docker compose run --rm --no-deps api npm test # inside Docker
-```
-
----
-
-## Logging & health
-
-### Logging
-
-Plain `console` output to stdout/stderr: the startup message, unhandled errors (with their stack), PostgreSQL pool
-errors and failed health checks. Requests are not logged. View the logs with `docker compose logs -f api`.
-
-### Health
+## Health
 
 `GET /api/health` runs `SELECT 1` through Prisma (`prisma.$queryRaw`). It returns `200 { "status": "ok", "db": "up" }`, or
 `503 { "status": "error", "db": "down" }`. Docker uses it as the `api` container healthcheck.
@@ -963,9 +919,6 @@ errors and failed health checks. Requests are not logged. View the logs with `do
 |-------------------------|-------------------------------------------------------------|
 | `npm start`             | `node src/server.js`                                        |
 | `npm run seed`          | `node seeds/seed.js`                                        |
-| `npm test`              | `node --test`                                               |
-| `npm run format`        | `prettier --write .`                                        |
-| `npm run format:check`  | `prettier --check .`                                        |
 
 ---
 
