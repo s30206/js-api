@@ -16,5 +16,10 @@ export function createBrandsController({ brandService }) {
     res.json(toBrandDto(await brandService.getById(req.params.id)));
   }
 
-  return { list, getById };
+  async function remove(req, res) {
+    await brandService.remove(req.params.id);
+    res.status(204).end();
+  }
+
+  return { list, getById, remove };
 }
