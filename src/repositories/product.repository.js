@@ -77,6 +77,47 @@ export function createProductRepository({ prisma }) {
     return db.products.count({ where: listWhere(filters) });
   }
 
+  // Returns null instead of throwing when the sku is already taken.
+  // skipDuplicates makes this INSERT ... ON CONFLICT DO NOTHING RETURNING, so a duplicate returns no row.
+  // A categoryId or brandId that doesn't exist makes Prisma throw an error with code P2003.
+  // specs left undefined gets the column default ({}). price is a decimal string.
+  async function create({ categoryId, brandId, sku, name, description, price, stock, specs }, db = prisma) {
+    const [product] = await db.products.createManyAndReturn({
+      data: [{ category_id: categoryId, brand_id: brandId, sku, name, description, price, stock, specs }],
+      skipDuplicates: true,
+      include: INCLUDE,
+    });
+    // A new product has no reviews yet.
+    return product ? toRow(product) : null;
+  }
+
+  // Fields left undefined keep their current value; description may also be set to null to clear it.
+  // Returns null when the product doesn't exist. updateMany doesn't throw on a miss, where update() would.
+  // A taken sku makes Prisma throw an error with code P2002, and a categoryId or brandId that doesn't exist one
+  // with code P2003.
+  async function update(id, { categoryId, brandId, sku, name, description, price, stock, specs, isActive }, db = prisma) {
+    const { count } = await db.products.updateMany({
+      where: { id },
+      data: {
+        category_id: categoryId,
+        brand_id: brandId,
+        sku,
+        name,
+        description,
+        price,
+        stock,
+        specs,
+        is_active: isActive,
+      },
+    });
+    return count > 0 ? findById(id, db) : null;
+  }
+
+  async function deactivate(id, db = prisma) {
+    const { count } = await db.products.updateMany({ where: { id }, data: { is_active: false } });
+    return count > 0;
+  }
+
   // Row locks held until the surrounding transaction ends. Rows are locked in id order, so two transactions
   // locking overlapping sets can't deadlock. Raw SQL because Prisma has no FOR UPDATE; tx must be the client
   // from prisma.$transaction(). price comes back as a Prisma Decimal.
@@ -98,5 +139,5 @@ export function createProductRepository({ prisma }) {
     }
   }
 
-  return { findById, list, count, lockByIds, decrementStock, incrementStock };
+  return { findById, list, count, create, update, deactivate, lockByIds, decrementStock, incrementStock };
 }

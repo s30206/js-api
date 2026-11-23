@@ -11,13 +11,19 @@ export function createCategoryRepository({ prisma }) {
     return db.categories.count();
   }
 
-  // A duplicate name or slug makes Prisma throw an error with code P2002.
+  // Returns null instead of throwing when the name or slug is already taken.
+  // skipDuplicates makes this INSERT ... ON CONFLICT DO NOTHING RETURNING, so a duplicate returns no row.
   async function create({ name, slug, description }, db = prisma) {
-    return db.categories.create({ data: { name, slug, description } });
+    const [category] = await db.categories.createManyAndReturn({
+      data: [{ name, slug, description }],
+      skipDuplicates: true,
+    });
+    return category ?? null;
   }
 
   // Fields left undefined keep their current value; description may also be set to null to clear it.
   // Returns null when the category doesn't exist. updateManyAndReturn returns no row on a miss, where update() would throw.
+  // A name or slug that is already taken makes Prisma throw an error with code P2002.
   async function update(id, { name, slug, description }, db = prisma) {
     const [category] = await db.categories.updateManyAndReturn({ where: { id }, data: { name, slug, description } });
     return category ?? null;

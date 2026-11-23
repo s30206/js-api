@@ -23,7 +23,9 @@ tags:
   - name: Brands
     description: Product brands. Reading is public; creating, updating and deleting are admin only.
   - name: Products
-    description: Product catalog. Public; an admin token also unlocks inactive (delisted) products.
+    description: >
+      Product catalog. Reading is public, and an admin token also unlocks inactive (delisted) products;
+      creating, updating and deleting are admin only.
   - name: Reviews
     description: Product reviews. Reading is public; only customers who received a product can review it.
   - name: Cart
@@ -357,7 +359,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AdminOnly' }
         '409':
-          description: '`CATEGORY_EXISTS`: the name or slug is already taken'
+          description: '`CONFLICT`: the name or slug is already taken'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -400,7 +402,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminOnly' }
         '404': { $ref: '#/components/responses/CategoryNotFound' }
         '409':
-          description: '`CATEGORY_EXISTS`: the name or slug is already taken'
+          description: '`CONFLICT`: the name or slug is already taken'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -417,7 +419,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminOnly' }
         '404': { $ref: '#/components/responses/CategoryNotFound' }
         '409':
-          description: '`CATEGORY_IN_USE`: at least one product still references the category'
+          description: '`CONFLICT`: at least one product still references the category'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -460,7 +462,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AdminOnly' }
         '409':
-          description: '`BRAND_EXISTS`: the name is already taken'
+          description: '`CONFLICT`: the name is already taken'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -503,7 +505,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminOnly' }
         '404': { $ref: '#/components/responses/BrandNotFound' }
         '409':
-          description: '`BRAND_EXISTS`: the name is already taken'
+          description: '`CONFLICT`: the name is already taken'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -520,7 +522,7 @@ paths:
         '403': { $ref: '#/components/responses/AdminOnly' }
         '404': { $ref: '#/components/responses/BrandNotFound' }
         '409':
-          description: '`BRAND_IN_USE`: at least one product still references the brand'
+          description: '`CONFLICT`: at least one product still references the brand'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -588,6 +590,26 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AccountDisabled' }
+    post:
+      tags: [Products]
+      summary: Create a product
+      description: The product is created active.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductRequest' }
+      responses:
+        '201':
+          description: Created product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '409': { $ref: '#/components/responses/ProductConflict' }
 
   /products/{id}:
     parameters:
@@ -610,6 +632,51 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/AccountDisabled' }
         '404': { $ref: '#/components/responses/ProductNotFound' }
+    patch:
+      tags: [Products]
+      summary: Update a product
+      description: >
+        Fields that are left out keep their value. `description` can be set to `null` to clear it, and `specs`
+        replaces the whole object. Works on inactive products too: send `"isActive": true` to reactivate one.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProductRequest' }
+      responses:
+        '200':
+          description: Updated product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404':
+          description: '`NOT_FOUND`: no product with this id'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409': { $ref: '#/components/responses/ProductConflict' }
+    delete:
+      tags: [Products]
+      summary: Delete (delist) a product
+      description: >
+        Soft delete: sets `isActive` to `false`. The product disappears from public listings but stays referenced
+        by past orders, carts and reviews, and can be reactivated with `PATCH`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Product delisted (also when it already was)
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404':
+          description: '`NOT_FOUND`: no product with this id'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /products/{id}/reviews:
     parameters:
@@ -1251,6 +1318,47 @@ components:
           items: { $ref: '#/components/schemas/Product' }
         meta: { $ref: '#/components/schemas/PageMeta' }
 
+    CreateProductRequest:
+      type: object
+      required: [categoryId, brandId, sku, name, price, stock]
+      properties:
+        categoryId: { type: integer, minimum: 1, example: 1 }
+        brandId: { type: integer, minimum: 1, example: 1 }
+        sku: { type: string, minLength: 1, maxLength: 64, example: CPU-AMD-R5-9600X }
+        name: { type: string, minLength: 1, maxLength: 255, example: AMD Ryzen 5 9600X }
+        description: { type: string, nullable: true, minLength: 1, maxLength: 5000, example: 6-core desktop processor }
+        price:
+          type: string
+          pattern: '^\d{1,8}(\.\d{1,2})?$'
+          description: Decimal string with at most 2 decimal places, so no precision is lost
+          example: '1099.00'
+        stock: { type: integer, minimum: 0, example: 25 }
+        specs:
+          type: object
+          maxProperties: 30
+          description: Flat object of string, number and boolean values. Defaults to `{}`.
+          additionalProperties:
+            oneOf: [{ type: string }, { type: number }, { type: boolean }]
+          example: { socket: AM5, cores: 6, threads: 12, tdpW: 65 }
+
+    UpdateProductRequest:
+      type: object
+      properties:
+        categoryId: { type: integer, minimum: 1 }
+        brandId: { type: integer, minimum: 1 }
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, nullable: true, minLength: 1, maxLength: 5000 }
+        price: { type: string, pattern: '^\d{1,8}(\.\d{1,2})?$', example: '999.00' }
+        stock: { type: integer, minimum: 0, example: 30 }
+        specs:
+          type: object
+          maxProperties: 30
+          description: Replaces the whole specs object.
+          additionalProperties:
+            oneOf: [{ type: string }, { type: number }, { type: boolean }]
+        isActive: { type: boolean, description: '`true` reactivates a deleted product, `false` delists it' }
+
     CreateReviewRequest:
       type: object
       required: [rating]
@@ -1466,6 +1574,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     ProductNotFound:
       description: '`NOT_FOUND`: no product with this id, or it is inactive and the caller is not an admin'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProductConflict:
+      description: '`CONFLICT`: the SKU is already taken, or the category or brand does not exist'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

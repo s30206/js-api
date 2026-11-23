@@ -456,8 +456,12 @@ CREATE TABLE reviews (
   runs it **only when the data directory is empty**, i.e. on the first start of a fresh `pgdata` volume.
 - To change the schema:
   1. Edit `db/init.sql` and recreate the database with `docker compose down -v`. All data is lost.
-  2. Run `npx prisma db pull` with `DATABASE_URL` set in your shell to the recreated database, and check that the
-     diff keeps the hand-added `@updatedAt` attributes.
+  2. Run `npx prisma db pull` against the recreated database, and check that the diff keeps the hand-added
+     `@updatedAt` attributes. The `db` container publishes port 5432 on `127.0.0.1` only, so from your machine:
+
+     ```bash
+     DATABASE_URL=postgres://pcshop:pcshop@localhost:5432/pcshop npx prisma db pull
+     ```
   3. Run `npx prisma generate` to regenerate the client locally (the Docker build does this itself).
 
 ### Money
@@ -492,7 +496,7 @@ CREATE TABLE reviews (
   listings (404 on detail), but they stay referenced by past orders, carts and reviews. Admins can list them with
   `includeInactive=true` and reactivate them with `PATCH { "isActive": true }`.
 - **Categories and brands** are hard-deleted, but only when no product (active or inactive) references them.
-  Otherwise the API returns `409 CATEGORY_IN_USE` / `409 BRAND_IN_USE`.
+  Otherwise the API returns `409 CONFLICT`.
 - A product's average rating and review count come from one `reviews.groupBy` query (sum and count per product) for
   all products being returned. The average is rounded to 2 decimals and is `null` when there are no reviews.
 
@@ -608,7 +612,7 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 | 402  | `PAYMENT_DECLINED`                                                                                                           |
 | 403  | `FORBIDDEN`, `ACCOUNT_DISABLED`, `REVIEW_NOT_ALLOWED`                                                                        |
 | 404  | `NOT_FOUND`                                                                                                                  |
-| 409  | `CONFLICT`, `EMAIL_TAKEN`, `ADDRESS_LIMIT_REACHED`, `CART_EMPTY`, `INSUFFICIENT_STOCK`, `PRODUCT_UNAVAILABLE`, `INVALID_ORDER_STATE`, `ALREADY_REVIEWED`, `CATEGORY_IN_USE`, `BRAND_IN_USE` |
+| 409  | `CONFLICT`, `EMAIL_TAKEN`, `ADDRESS_LIMIT_REACHED`, `CART_EMPTY`, `INSUFFICIENT_STOCK`, `PRODUCT_UNAVAILABLE`, `INVALID_ORDER_STATE`, `ALREADY_REVIEWED` |
 | 500  | `INTERNAL_ERROR`                                                                                                             |
 
 ### Endpoints
@@ -655,12 +659,12 @@ Interactive documentation: **`http://localhost:3000/api/docs`** (Swagger UI, sup
 | GET    | `/api/categories/:id` | Public | Category details                                 |
 | POST   | `/api/categories`     | Admin  | `{ name, slug, description? }`                   |
 | PATCH  | `/api/categories/:id` | Admin  | Partial update                                   |
-| DELETE | `/api/categories/:id` | Admin  | `204`, or `409 CATEGORY_IN_USE`                  |
+| DELETE | `/api/categories/:id` | Admin  | `204`, or `409 CONFLICT` while products use it    |
 | GET    | `/api/brands`         | Public | Paginated list, ordered by id                    |
 | GET    | `/api/brands/:id`     | Public | Brand details                                    |
 | POST   | `/api/brands`         | Admin  | `{ name }`                                       |
 | PATCH  | `/api/brands/:id`     | Admin  | Partial update                                   |
-| DELETE | `/api/brands/:id`     | Admin  | `204`, or `409 BRAND_IN_USE`                     |
+| DELETE | `/api/brands/:id`     | Admin  | `204`, or `409 CONFLICT` while products use it    |
 
 #### Products
 
@@ -796,7 +800,7 @@ clear message if something required is missing.
 | `ADMIN_PASSWORD`            | *(required)*                                    | Seeded admin password                                 |
 
 Fixed constants (in `config/index.js`, not env): token lifetime `3600 s`, bcrypt cost `12`, currency `PLN`,
-pagination default/max `5`/`20`, at most `3` addresses per customer.
+pagination default/max `5`/`20`, at most `3` addresses per customer, at most `99` of one product in the cart.
 
 ---
 
@@ -822,6 +826,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:5432:5432"   # reachable from this machine only, for the Prisma CLI and psql
     volumes:
       - pgdata:/var/lib/postgresql
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

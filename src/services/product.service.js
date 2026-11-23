@@ -1,4 +1,4 @@
-import { NotFoundError } from '../errors/AppError.js';
+import { ConflictError, NotFoundError } from '../errors/AppError.js';
 
 // viewer is req.user, or undefined for anonymous requests. Only admins can see inactive (delisted) products.
 function isAdmin(viewer) {
@@ -34,5 +34,24 @@ export function createProductService({ productRepository }) {
     return product;
   }
 
-  return { list, getById };
+  // The unique constraint on sku is what rejects duplicates, so concurrent requests can't both succeed.
+  async function create(fields) {
+    const product = await productRepository.create(fields);
+    if (!product) throw new ConflictError('CONFLICT', 'A product with this SKU already exists');
+    return product;
+  }
+
+  // Works on inactive products too, so isActive: true reactivates a deleted one.
+  async function update(id, fields) {
+    const product = await productRepository.update(id, fields);
+    if (!product) throw new NotFoundError('Product not found');
+    return product;
+  }
+
+  // Soft delete: past orders, carts and reviews keep referencing the product.
+  async function remove(id) {
+    if (!(await productRepository.deactivate(id))) throw new NotFoundError('Product not found');
+  }
+
+  return { list, getById, create, update, remove };
 }

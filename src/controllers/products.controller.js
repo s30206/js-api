@@ -16,5 +16,32 @@ export function createProductsController({ productService }) {
     res.json(toProductDto(await productService.getById(req.params.id, req.user)));
   }
 
-  return { list, getById };
+  async function create(req, res) {
+    const { categoryId, brandId, sku, name, description, price, stock, specs } = req.body;
+    const product = await productService.create({ categoryId, brandId, sku, name, description, price, stock, specs });
+    res.status(201).json(toProductDto(product));
+  }
+
+  async function update(req, res) {
+    const { categoryId, brandId, sku, name, description, price, stock, specs, isActive } = req.body ?? {};
+    const product = await productService.update(req.params.id, {
+      categoryId,
+      brandId,
+      sku,
+      name,
+      description,
+      price,
+      stock,
+      specs,
+      isActive,
+    });
+    res.json(toProductDto(product));
+  }
+
+  async function remove(req, res) {
+    await productService.remove(req.params.id);
+    res.status(204).end();
+  }
+
+  return { list, getById, create, update, remove };
 }

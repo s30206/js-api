@@ -11,13 +11,16 @@ export function createBrandRepository({ prisma }) {
     return db.brands.count();
   }
 
-  // A duplicate name makes Prisma throw an error with code P2002.
+  // Returns null instead of throwing when the name is already taken.
+  // skipDuplicates makes this INSERT ... ON CONFLICT DO NOTHING RETURNING, so a duplicate returns no row.
   async function create({ name }, db = prisma) {
-    return db.brands.create({ data: { name } });
+    const [brand] = await db.brands.createManyAndReturn({ data: [{ name }], skipDuplicates: true });
+    return brand ?? null;
   }
 
   // Fields left undefined keep their current value. Returns null when the brand doesn't exist.
   // updateManyAndReturn returns no row on a miss, where update() would throw.
+  // A name that is already taken makes Prisma throw an error with code P2002.
   async function update(id, { name }, db = prisma) {
     const [brand] = await db.brands.updateManyAndReturn({ where: { id }, data: { name } });
     return brand ?? null;
