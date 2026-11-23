@@ -6,6 +6,7 @@ import { createHealthController } from './controllers/health.controller.js';
 import { createMeController } from './controllers/me.controller.js';
 import { createOrdersController } from './controllers/orders.controller.js';
 import { createProductsController } from './controllers/products.controller.js';
+import { createReviewsController } from './controllers/reviews.controller.js';
 import { createUsersController } from './controllers/users.controller.js';
 import { createPrismaClient } from './db/prisma.js';
 import { createAuthenticate, createAuthenticateOptional } from './middleware/authenticate.js';
@@ -16,6 +17,7 @@ import { createCategoryRepository } from './repositories/category.repository.js'
 import { createOrderRepository } from './repositories/order.repository.js';
 import { createPaymentRepository } from './repositories/payment.repository.js';
 import { createProductRepository } from './repositories/product.repository.js';
+import { createReviewRepository } from './repositories/review.repository.js';
 import { createUserRepository } from './repositories/user.repository.js';
 import { createAddressService } from './services/address.service.js';
 import { createAuthService } from './services/auth.service.js';
@@ -25,6 +27,7 @@ import { createCategoryService } from './services/category.service.js';
 import { createOrderService } from './services/order.service.js';
 import { createPaymentService } from './services/payment.service.js';
 import { createProductService } from './services/product.service.js';
+import { createReviewService } from './services/review.service.js';
 import { createUserService } from './services/user.service.js';
 
 // Composition root: prisma - repositories - services - controllers.
@@ -39,6 +42,7 @@ export function createContainer() {
   const cartRepository = createCartRepository({ prisma });
   const orderRepository = createOrderRepository({ prisma });
   const paymentRepository = createPaymentRepository({ prisma });
+  const reviewRepository = createReviewRepository({ prisma });
 
   const authService = createAuthService({ userRepository });
   const userService = createUserService({ userRepository });
@@ -58,6 +62,7 @@ export function createContainer() {
     paymentService,
     prisma,
   });
+  const reviewService = createReviewService({ reviewRepository, productRepository, orderRepository });
 
   return {
     prisma,
@@ -71,6 +76,7 @@ export function createContainer() {
     brandsController: createBrandsController({ brandService }),
     cartController: createCartController({ cartService }),
     ordersController: createOrdersController({ orderService }),
+    reviewsController: createReviewsController({ reviewService }),
     healthController: createHealthController({ prisma }),
   };
 }

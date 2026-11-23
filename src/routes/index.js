@@ -6,6 +6,7 @@ import { createCategoriesRoutes } from './categories.routes.js';
 import { createMeRoutes } from './me.routes.js';
 import { createOrdersRoutes } from './orders.routes.js';
 import { createProductsRoutes } from './products.routes.js';
+import { createReviewsRoutes } from './reviews.routes.js';
 import { createUsersRoutes } from './users.routes.js';
 
 export function createApiRouter(container) {
@@ -18,6 +19,7 @@ export function createApiRouter(container) {
   router.use('/categories', createCategoriesRoutes(container));
   router.use('/brands', createBrandsRoutes(container));
   router.use('/products', createProductsRoutes(container));
+  router.use('/reviews', createReviewsRoutes(container));
   router.use('/cart', createCartRoutes(container));
   router.use('/orders', createOrdersRoutes(container));
 

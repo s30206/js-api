@@ -94,5 +94,14 @@ export function createOrderRepository({ prisma }) {
     return toRow(order);
   }
 
-  return { create, findById, list, count, lockById, updateStatus };
+  // Whether the user has at least one delivered order containing the product.
+  async function hasDeliveredProduct(userId, productId, db = prisma) {
+    const order = await db.orders.findFirst({
+      where: { user_id: userId, status: 'delivered', order_items: { some: { product_id: productId } } },
+      select: { id: true },
+    });
+    return order !== null;
+  }
+
+  return { create, findById, list, count, lockById, updateStatus, hasDeliveredProduct };
 }

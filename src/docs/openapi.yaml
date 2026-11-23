@@ -24,6 +24,8 @@ tags:
     description: Product brands. Reading is public; creating, updating and deleting are admin only.
   - name: Products
     description: Product catalog. Public; an admin token also unlocks inactive (delisted) products.
+  - name: Reviews
+    description: Product reviews. Reading is public; only customers who received a product can review it.
   - name: Cart
     description: The authenticated customer's persistent cart (customers only). Adding to the cart does not reserve stock.
   - name: Orders
@@ -609,6 +611,113 @@ paths:
         '403': { $ref: '#/components/responses/AccountDisabled' }
         '404': { $ref: '#/components/responses/ProductNotFound' }
 
+  /products/{id}/reviews:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Id of the product
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Reviews]
+      summary: List a product's reviews
+      description: Newest first.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+      responses:
+        '200':
+          description: One page of reviews
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404':
+          description: '`NOT_FOUND`: no active product with this id'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      tags: [Reviews]
+      summary: Review a product
+      description: >
+        Only verified buyers can review a product: the customer needs at least one `delivered` order containing it.
+        A customer can review each product once; edit the existing review instead.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReviewRequest' }
+      responses:
+        '201':
+          description: Review created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: >
+            `FORBIDDEN`: only customers can use this endpoint; `REVIEW_NOT_ALLOWED`: the customer has no `delivered`
+            order containing the product; `ACCOUNT_DISABLED`: the account has been blocked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: '`NOT_FOUND`: no active product with this id'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`ALREADY_REVIEWED`: the customer has already reviewed this product'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reviews/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    patch:
+      tags: [Reviews]
+      summary: Update one of the authenticated customer's reviews
+      description: 'Only the fields present in the body are changed. Send `"comment": null` to remove the comment.'
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateReviewRequest' }
+      responses:
+        '200':
+          description: Updated review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CustomerOnly' }
+        '404': { $ref: '#/components/responses/ReviewNotFound' }
+    delete:
+      tags: [Reviews]
+      summary: Delete a review
+      description: Customers can delete their own reviews; admins can delete any review.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Review deleted
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/AccountDisabled' }
+        '404': { $ref: '#/components/responses/ReviewNotFound' }
+
   /cart:
     get:
       tags: [Cart]
@@ -1142,6 +1251,40 @@ components:
           items: { $ref: '#/components/schemas/Product' }
         meta: { $ref: '#/components/schemas/PageMeta' }
 
+    CreateReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        comment: { type: string, nullable: true, minLength: 1, maxLength: 5000, example: Fast and runs cool. }
+
+    UpdateReviewRequest:
+      type: object
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5, example: 4 }
+        comment: { type: string, nullable: true, minLength: 1, maxLength: 5000, example: Still great after a month. }
+
+    Review:
+      type: object
+      required: [id, productId, userId, rating, comment, createdAt, updatedAt]
+      properties:
+        id: { type: integer, example: 5 }
+        productId: { type: integer, example: 12 }
+        userId: { type: integer, description: The author, example: 42 }
+        rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        comment: { type: string, nullable: true, example: Fast and runs cool. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ReviewPage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Review' }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+
     SetCartItemRequest:
       type: object
       required: [quantity]
@@ -1343,6 +1486,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     OrderNotFound:
       description: '`NOT_FOUND`: no order with this id, or it belongs to another customer'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ReviewNotFound:
+      description: '`NOT_FOUND`: no review with this id, or it was written by another customer'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
